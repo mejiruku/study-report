@@ -5,175 +5,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>StudyReport</title>
+    <link rel="stylesheet" href="./css/style.css?v=1.0.0">
+    <link rel="manifest" href="./js/manifest.json?v=1.0.0">
     <link rel="icon" type="image/x-icon" href="./assets/favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon-180x180.png">
-
-    <style>
-        body {
-            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
-            background-color: #f4f7f6;
-            padding: 20px;
-            color: #333;
-        }
-        
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-        
-        h2 {
-            text-align: center;
-            color: #444;
-        }
-        
-        .subject-row {
-            border: 1px solid #ddd;
-            padding: 15px;
-            margin-bottom: 15px;
-            border-radius: 6px;
-            background-color: #fafafa;
-            position: relative;
-        }
-        
-        .remove-btn {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: #ff4d4d;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            padding: 2px 8px;
-            font-size: 12px;
-        }
-        
-        .form-group {
-            margin-bottom: 10px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-            font-size: 0.9em;
-        }
-        
-        select,
-        input[type="text"],
-        textarea {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            box-sizing: border-box;
-            background-color: #fff;
-        }
-        
-        textarea {
-            height: 60px;
-            resize: vertical;
-        }
-        
-        .other-subject-input {
-            margin-top: 8px;
-            display: none;
-            border: 2px solid #008CBA;
-        }
-        
-        .time-inputs {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .time-inputs select {
-            width: 100px;
-        }
-        /* セレクトボックスの幅を調整 */
-        
-        .controls {
-            text-align: center;
-            margin: 20px 0;
-        }
-        
-        .add-btn {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        
-        .global-comment-section {
-            margin-top: 30px;
-            background-color: #e8f4f8;
-            padding: 15px;
-            border-radius: 6px;
-            border: 1px solid #bce0eb;
-        }
-        
-        .result-area {
-            margin-top: 30px;
-            border-top: 2px solid #eee;
-            padding-top: 20px;
-        }
-        
-        #output-text {
-            width: 100%;
-            height: 350px;
-            padding: 10px;
-            font-family: monospace;
-            border: 1px solid #ccc;
-            background-color: #f9f9f9;
-            line-height: 1.5;
-        }
-        
-        .copy-btn {
-            display: block;
-            width: 100%;
-            background-color: #008CBA;
-            color: white;
-            padding: 12px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-top: 10px;
-        }
-        
-        .total-display {
-            text-align: right;
-            font-weight: bold;
-            font-size: 1.2em;
-            color: #008CBA;
-            margin-bottom: 10px;
-        }
-    </style>
 </head>
 
 <body>
-
     <div class="container">
         <h2>勉強報告メール作成</h2>
-
         <div id="subjects-container"></div>
-
         <div class="controls">
             <button class="add-btn" onclick="addSubject()">＋ 教科を追加する</button>
+            <button class="reset-btn" onclick="resetData()">全ての入力をクリア</button>
         </div>
-
         <div class="global-comment-section">
             <label style="font-size: 1.1em; color: #006680;">全体の感想・コメント</label>
             <textarea id="global-comment-text" placeholder="コメント" oninput="generateText()"></textarea>
         </div>
-
         <div class="result-area">
             <h3>作成されたメール本文</h3>
             <div class="total-display" id="screen-total">合計: 0時間 0分</div>
@@ -181,136 +30,7 @@
             <button class="copy-btn" onclick="copyToClipboard()">本文をコピーする</button>
         </div>
     </div>
-
-    <script>
-        const subjectList = ["数I", "数A", "数II", "数B", "数C", "生物基礎", "物理基礎", "化学基礎", "生物", "化学", "英語", "英コミュ", "論評", "CS", "その他"];
-        const mathSubjects = ["数I", "数A", "数II", "数B", "数C"];
-        const scienceSubjects = ["生物基礎", "物理基礎", "化学基礎", "生物", "化学"];
-        const englishSubjects = ["英語", "英コミュ", "論評", "CS"];
-
-
-        // 時間と分の選択肢を生成
-        const hoursOptions = Array.from({
-            length: 11
-        }, (_, i) => `<option value="${i}">${i}</option>`).join('');
-        const minutesOptions = Array.from({
-            length: 12
-        }, (_, i) => `<option value="${i*5}">${i*5}</option>`).join('');
-
-        const container = document.getElementById('subjects-container');
-        const outputText = document.getElementById('output-text');
-        const screenTotal = document.getElementById('screen-total');
-        const globalCommentInput = document.getElementById('global-comment-text');
-
-        window.onload = () => addSubject();
-
-        function addSubject() {
-            const div = document.createElement('div');
-            div.className = 'subject-row';
-            div.innerHTML = `
-            <button class="remove-btn" onclick="removeRow(this)">削除</button>
-            <div class="form-group">
-                <label>教科</label>
-                <select class="subject-select" onchange="toggleOtherInput(this)">
-                    ${subjectList.map(s => `<option value="${s}">${s}</option>`).join('')}
-                </select>
-                <input type="text" class="other-subject-input" placeholder="教科名を入力してください" oninput="generateText()">
-            </div>
-            <div class="form-group">
-                <label>内容</label>
-                <textarea class="subject-text" placeholder="今日やったこと" oninput="generateText()"></textarea>
-            </div>
-            <div class="form-group">
-                <label>勉強時間</label>
-                <div class="time-inputs">
-                    <select class="time-h" onchange="generateText()">${hoursOptions}</select> 時間
-                    <select class="time-m" onchange="generateText()">${minutesOptions}</select> 分
-                </div>
-            </div>
-        `;
-        container.appendChild(div);
-        generateText();
-    }
-
-    function toggleOtherInput(selectElement) {
-        const otherInput = selectElement.nextElementSibling;
-        if (selectElement.value === "その他") {
-            otherInput.style.display = "block";
-        } else {
-            otherInput.style.display = "none";
-            otherInput.value = "";
-        }
-        generateText();
-    }
-
-    function removeRow(btn) {
-        btn.parentElement.remove();
-        generateText();
-    }
-
-    function generateText() {
-        const rows = document.querySelectorAll('.subject-row');
-        let totalMinutes = 0;
-        let bodyContent = "";
-        let displayGroups = new Set();
-
-        rows.forEach(row => {
-            const selectValue = row.querySelector('.subject-select').value;
-            const otherValue = row.querySelector('.other-subject-input').value;
-            
-            let subjectDisplayName = (selectValue === "その他") ? (otherValue || "その他") : selectValue;
-
-            const text = row.querySelector('.subject-text').value;
-            const h = parseInt(row.querySelector('.time-h').value) || 0;
-            const m = parseInt(row.querySelector('.time-m').value) || 0;
-
-            totalMinutes += (h * 60) + m;
-
-            if (mathSubjects.includes(selectValue)) {
-                displayGroups.add("数学");
-            } else if (scienceSubjects.includes(selectValue)) {
-                displayGroups.add("理科");
-            } else if (englishSubjects.includes(selectValue)) {
-                displayGroups.add("英語");
-            } else {
-                displayGroups.add(subjectDisplayName);
-            }
-
-            bodyContent += `\n${subjectDisplayName}\n${text}\n勉強時間 ${h}時間${m}分\n\n`;
-        });
-
-        const totalH = Math.floor(totalMinutes / 60);
-        const totalM = totalMinutes % 60;
-        const globalComment = globalCommentInput.value;
-
-        let header = "";
-        const groupArray = Array.from(displayGroups).filter(item => item !== "");
-        if (groupArray.length > 0) {
-            header = `今日は${groupArray.join('と')}をやりました\n`;
-        } else {
-            header = `今日の学習報告\n`;
-        }
-
-        let finalText = header + bodyContent;
-        if (rows.length > 1) {
-            finalText += `合計勉強時間 ${totalH}時間${totalM}分\n`;
-        }
-        if (globalComment.trim() !== "") {
-            finalText += `\n\n${globalComment}`;
-        }
-
-        screenTotal.innerText = `合計: ${totalH}時間 ${totalM}分`;
-        outputText.value = finalText;
-    }
-
-    function copyToClipboard() {
-        const copyText = document.getElementById("output-text");
-        copyText.select();
-        document.execCommand("copy");
-        alert("コピーしました！");
-    }
-    </script>
-
+    <script src="./js/script.js?v=1.0.0" async></script>
 </body>
 
 </html>
