@@ -1,6 +1,6 @@
 {
     "name": "Study Report",
-    "short_name": "Report",
+    "short_name": "StudyReport",
     "start_url": "https://mejiruku.github.io/study-report/",
     "display": "standalone",
     "background_color": "#ffffff",
