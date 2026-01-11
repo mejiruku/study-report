@@ -1,4 +1,4 @@
-// --- サービスワーカー（オフライン機能）の登録 ---
+// --- サービスワーカーの登録 ---
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
@@ -8,19 +8,13 @@ if ('serviceWorker' in navigator) {
 }
 
 // --- アプリ本体のロジック ---
-
-// リストの先頭に空の選択肢（未選択状態）を追加
 const subjectList = ["選択してください", "数学","数I", "数A", "数II", "数B", "数C", "理科","生物基礎", "物理基礎", "化学基礎", "生物", "化学", "英語", "英コミュ", "論評", "CS", "その他"];
 const mathSubjects = ["数学","数I", "数A", "数II", "数B", "数C"];
 const scienceSubjects = ["理科","生物基礎", "物理基礎", "化学基礎", "生物", "化学"];
 const englishSubjects = ["英語", "英コミュ", "論評", "CS"];
 
-const hoursOptions = Array.from({
-    length: 11
-}, (_, i) => `<option value="${i}">${i}</option>`).join('');
-const minutesOptions = Array.from({
-    length: 12
-}, (_, i) => `<option value="${i * 5}">${i * 5}</option>`).join('');
+const hoursOptions = Array.from({ length: 11 }, (_, i) => `<option value="${i}">${i}</option>`).join('');
+const minutesOptions = Array.from({ length: 12 }, (_, i) => `<option value="${i * 5}">${i * 5}</option>`).join('');
 
 const container = document.getElementById('subjects-container');
 const outputText = document.getElementById('output-text');
@@ -38,7 +32,6 @@ function addSubject(initialData = null) {
                 <label>教科</label>
                 <select class="subject-select" onchange="toggleOtherInput(this)">
                     ${subjectList.map(s => {
-                        // 「選択してください」の場合はvalueを空にする
                         const val = (s === "選択してください") ? "" : s;
                         return `<option value="${val}">${s}</option>`;
                     }).join('')}
@@ -80,6 +73,7 @@ function removeRow(btn) {
 function generateText() {
     const rows = document.querySelectorAll('.subject-row');
     let totalMinutes = 0, bodyContent = "", displayGroups = new Set(), saveDataArray = [];
+    let validSubjectCount = 0; 
     
     rows.forEach(row => {
         const selectValue = row.querySelector('.subject-select').value;
@@ -88,12 +82,11 @@ function generateText() {
         const h = parseInt(row.querySelector('.time-h').value) || 0;
         const m = parseInt(row.querySelector('.time-m').value) || 0;
         
-        // ローカルストレージ保存用には現在の入力値をすべて保持
         saveDataArray.push({ select: selectValue, other: otherValue, text: text, h: h, m: m });
 
-        // 教科が「選択してください（空文字）」の場合は、メール本文と合計時間の計算から除外
         if (selectValue === "") return;
 
+        validSubjectCount++;
         let subjectDisplayName = (selectValue === "その他") ? (otherValue || "その他") : selectValue;
         totalMinutes += (h * 60) + m;
 
@@ -102,21 +95,27 @@ function generateText() {
         else if (englishSubjects.includes(selectValue)) displayGroups.add("英語");
         else displayGroups.add(subjectDisplayName);
 
-        bodyContent += `\n${subjectDisplayName}\n${text}\n勉強時間 ${h}時間${m}分\n\n`;
+        // 時間の文字列作成（0分を隠す）
+        let timeStr = "";
+        if (h > 0 && m > 0) timeStr = `${h}時間${m}分`;
+        else if (h > 0 && m === 0) timeStr = `${h}時間`;
+        else if (h === 0 && m > 0) timeStr = `${m}分`;
+        else timeStr = `0分`;
+
+        bodyContent += `\n${subjectDisplayName}\n${text}\n勉強時間 ${timeStr}\n\n`;
     });
 
     const totalH = Math.floor(totalMinutes / 60);
     const totalM = totalMinutes % 60;
     const globalComment = globalCommentInput.value;
     
-    // ヘッダー部分の判定：有効な教科が1つも選ばれていない場合
     let header = (displayGroups.size > 0) ? `今日は${Array.from(displayGroups).join('と')}をやりました\n` : `今日の学習報告\n`;
-    
     let finalText = header + bodyContent;
     
-    // 有効な教科がある場合のみ合計時間を表示
-    if (totalMinutes > 0) {
-        finalText += `合計勉強時間 ${totalH}時間${totalM}分\n`;
+    // 2教科以上かつ合計が0より大きい場合のみ合計時間を表示
+    if (validSubjectCount >= 2 && totalMinutes > 0) {
+        let totalTimeStr = (totalM === 0) ? `${totalH}時間` : `${totalH}時間${totalM}分`;
+        finalText += `合計勉強時間 ${totalTimeStr}\n`;
     }
     
     if (globalComment.trim() !== "") {
@@ -136,11 +135,15 @@ function loadData() {
     const savedData = localStorage.getItem('studyReportData');
     container.innerHTML = '';
     if (savedData) {
-        const parsedData = JSON.parse(savedData);
-        globalCommentInput.value = parsedData.comment || "";
-        if (parsedData.subjects && parsedData.subjects.length > 0) {
-            parsedData.subjects.forEach(sub => addSubject(sub));
-        } else {
+        try {
+            const parsedData = JSON.parse(savedData);
+            globalCommentInput.value = parsedData.comment || "";
+            if (parsedData.subjects && parsedData.subjects.length > 0) {
+                parsedData.subjects.forEach(sub => addSubject(sub));
+            } else {
+                addSubject();
+            }
+        } catch (e) {
             addSubject();
         }
     } else {
@@ -153,7 +156,8 @@ function resetData() {
         localStorage.removeItem('studyReportData');
         container.innerHTML = '';
         globalCommentInput.value = '';
-        addSubject();
+        addSubject(); // 最初の1行を追加
+        generateText(); // テキストエリアを空にする
     }
 }
 
