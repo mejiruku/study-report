@@ -39,7 +39,7 @@ function addSubject(initialData = null) {
             </div>
             <div class="form-group"><label>内容</label><textarea class="subject-text" placeholder="今日やったこと" oninput="generateText()"></textarea></div>
             <div class="form-group"><label>勉強時間</label><div class="time-inputs"><select class="time-h" onchange="generateText()">${hoursOptions}</select> 時間 <select class="time-m" onchange="generateText()">${minutesOptions}</select> 分</div></div>`;
-            
+
             container.appendChild(div);
             if (initialData) {
                 div.querySelector('.subject-select').value = initialData.select;
