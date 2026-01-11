@@ -70,7 +70,6 @@ function addSubject(initialData = null) {
                 const h = parseInt(row.querySelector('.time-h').value) || 0;
                 const m = parseInt(row.querySelector('.time-m').value) || 0;
                 saveDataArray.push({ select: selectValue, other: otherValue, text: text, h: h, m: m });
-                
                 let subjectDisplayName = (selectValue === "その他") ? (otherValue || "その他") : selectValue;
                 totalMinutes += (h * 60) + m;
                 if (mathSubjects.includes(selectValue)) displayGroups.add("数学");
@@ -105,4 +104,4 @@ function addSubject(initialData = null) {
             } else { addSubject(); }
         }
         function resetData() { if(confirm("入力内容をすべて消去しますか？")) { localStorage.removeItem('studyReportData'); container.innerHTML = ''; globalCommentInput.value = ''; addSubject(); } }
-        function copyToClipboard() { document.getElementById("output-text").select(); document.execCommand("copy"); alert("コピーしました！"); }
+        function copyToClipboard() { document.getElementById("output-text").select(); document.execCommand("copy"); alert("コピーしました"); }
