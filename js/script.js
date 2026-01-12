@@ -21,26 +21,13 @@ const outputText = document.getElementById('output-text');
 const screenTotal = document.getElementById('screen-total');
 const globalCommentInput = document.getElementById('global-comment-text');
 const dateInput = document.getElementById('report-date');
-let isUpdatingFromFirestore = false;
-let unsubscribe = null;
-let saveTimeout = null;
-let currentUser = null;
-// Cloudとの同期が完了したかどうかのフラグ (初期ロード時の上書き防止)
-let isCloudInitialized = false;
 
 // デフォルトの日付を今日に設定
 window.onload = () => {
-    // Auth State Listener
-    firebase.auth().onAuthStateChanged((user) => {
-        currentUser = user;
-        updateAuthUI(user);
-        loadData(); // ユーザー切り替え時にデータを再ロード
-    });
-
     const today = new Date().toISOString().split('T')[0];
     dateInput.value = today;
-    // listener内でloadData呼ぶのでここは削除でもいいが、初期表示のチラつき防止で残してもよい。
-    // ただしAuth初期化前はnullなので、Auth listenerに任せたほうが安全。
+    loadData();
+    migrateOldDataIfNeeded();
 };
 
 dateInput.addEventListener('change', () => {
@@ -154,18 +141,9 @@ function generateText() {
     
     // 現在の日付に対して保存
     saveToLocalStorage(currentDateStr, saveDataArray, globalComment);
-    
-    // Firebaseに保存 (デバウンス処理: 1秒後に保存)
-    if (!isUpdatingFromFirestore) {
-        if (currentUser) updateSaveStatus('saving'); // ログイン時のみステータス表示
-        if (saveTimeout) clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => {
-            saveToFirestore(currentDateStr, saveDataArray, globalComment);
-        }, 1000);
-    }
 }
 
-// ------ ストレージ関連 (日付対応 & Firebase) ------
+// ------ ストレージ関連 (日付対応) ------
 
 // データ構造:
 // localStorage['studyReportAllData'] = JSON.stringify({
@@ -186,46 +164,10 @@ function getAllData() {
 
 function saveToLocalStorage(dateKey, subjects, comment) {
     const allData = getAllData();
-    // タイムスタンプを追加して保存
-    allData[dateKey] = { 
-        subjects: subjects, 
-        comment: comment,
-        localUpdatedAt: Date.now() // ローカル更新時刻を記録
-    };
+    // 空データでも保存して、その日の記録として残す（あるいは削除するロジックにするか？今回は上書き保存）
+    // もし完全に空ならキーを削除する手もあるが、シンプルに保存する
+    allData[dateKey] = { subjects: subjects, comment: comment };
     localStorage.setItem('studyReportAllData', JSON.stringify(allData));
-}
-
-function saveToFirestore(dateKey, subjects, comment) {
-    if (!db) return;
-    
-    if (!currentUser) {
-        console.log("Not logged in. Skipping Firestore save.");
-        return;
-    }
-
-    // まだクラウドの初期データをロードしていない場合、安易に上書きしない
-    // (空のローカルデータでクラウドを消してしまうのを防ぐ)
-    if (!isCloudInitialized) {
-        // 例外: オフラインなどでそもそも繋がらない場合はどうする？
-        // 一旦、onSnapshotが一度でも返ってくるのを待つのが安全
-        console.log("Waiting for cloud init...");
-        return;
-    }
-
-    // ユーザーごとのパス: users/{uid}/reports/{dateKey}
-    db.collection("users").doc(currentUser.uid).collection("reports").doc(dateKey).set({
-        subjects: subjects,
-        comment: comment,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    })
-    .then(() => {
-        console.log("Document successfully written!");
-        updateSaveStatus('saved');
-    })
-    .catch((error) => {
-        console.error("Error writing document: ", error);
-        updateSaveStatus('error');
-    });
 }
 
 function loadData() {
@@ -234,134 +176,7 @@ function loadData() {
 
     const allData = getAllData();
     const dayData = allData[dateKey];
-    
-    // Firebaseのリスナーを設定
-    setupRealtimeListener(dateKey);
 
-    renderData(dayData);
-}
-
-function setupRealtimeListener(dateKey) {
-    if (unsubscribe) unsubscribe(); // 前のリスナーを解除
-
-    if (!db || !currentUser) return; // ログインしていなければリスナー設定しない
-
-    // リスナー設定時は初期化フラグをリセット
-    isCloudInitialized = false;
-
-    // ユーザーごとのパス
-    unsubscribe = db.collection("users").doc(currentUser.uid).collection("reports").doc(dateKey)
-        .onSnapshot((doc) => {
-            // 初回であろうと更新であろうと、ここに来たら「クラウドと疎通できた」とみなす
-            isCloudInitialized = true;
-
-            if (doc.metadata.hasPendingWrites) {
-                return;
-            }
-
-            const data = doc.data();
-            if (data) {
-                // コンフリクト解消ロジック:
-                // クラウドの更新日時と比較して、「ローカルの方が圧倒的に新しい」場合はクラウドを採用しない
-                const allData = getAllData();
-                const localData = allData[dateKey];
-                
-                let shouldUseCloud = true;
-
-                if (localData && localData.localUpdatedAt && data.updatedAt) {
-                    const cloudTime = data.updatedAt.toDate().getTime();
-                    const localTime = localData.localUpdatedAt;
-                    
-                    // ローカルの方が10秒以上新しいなら、ローカル優先 (10秒はクロックずれなどのマージン)
-                    if (localTime > cloudTime + 10000) {
-                        console.log("Local data is newer, ignoring cloud update.");
-                        shouldUseCloud = false;
-                        // クラウドが古い場合、ローカルの内容で上書き保存をトリガーするべきか？
-                        // 次の入力時に保存されるので、ここでは何もしなくて良いが、
-                        // 明示的に保存したい場合はここで saveToFirestore を呼ぶ手もある。
-                        // 今回は「入力待ち」とする。
-                    }
-                }
-
-                if (shouldUseCloud) {
-                    isUpdatingFromFirestore = true;
-                    saveToLocalStorage(dateKey, data.subjects, data.comment);
-                    renderData(data);
-                    isUpdatingFromFirestore = false;
-                }
-            } else {
-                // クラウドにデータがない (存在しない) 場合
-                // ローカルにデータがあるなら、それをクラウドに書き込むべきかもしれないが、
-                // 「初期ロード時の誤削除」を防ぐため、何もしない（ローカル維持）
-                // ユーザーが何か入力すれば保存される。
-                console.log("No cloud data yet.");
-            }
-        });
-}
-
-// --- Auth Functions ---
-function login() {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    firebase.auth().signInWithPopup(provider)
-        .then((result) => {
-            console.log("Logged in:", result.user);
-            // リロードせずともAuth Listenerが検知してUI更新 & データロードする
-        }).catch((error) => {
-            console.error(error);
-            alert("ログインに失敗しました");
-        });
-}
-
-function logout() {
-    firebase.auth().signOut().then(() => {
-        console.log("Logged out");
-        // ログアウトしてもデータはクリアしない（ユーザー要望: クラウド優先だが表示は残す）
-        // localStorage.removeItem('studyReportAllData'); 
-        // container.innerHTML = '';
-        // addSubject(); 
-        alert("ログアウトしました");
-    }).catch((error) => {
-        console.error(error);
-    });
-}
-
-function updateSaveStatus(status) {
-    const statusEl = document.getElementById('save-status');
-    if (!statusEl) return;
-    
-    if (status === 'saving') {
-        statusEl.textContent = '保存中...';
-        statusEl.style.color = '#888';
-    } else if (status === 'saved') {
-        statusEl.textContent = '保存完了';
-        statusEl.style.color = '#4CAF50';
-        setTimeout(() => { statusEl.textContent = ''; }, 2000); // 2秒後に消す
-    } else if (status === 'error') {
-        statusEl.textContent = '保存エラー';
-        statusEl.style.color = 'red';
-    }
-}
-
-function updateAuthUI(user) {
-    const loginBtn = document.getElementById('login-btn');
-    const userInfo = document.getElementById('user-info');
-    const userIcon = document.getElementById('user-icon');
-    const userName = document.getElementById('user-name');
-
-    if (user) {
-        loginBtn.style.display = 'none';
-        userInfo.style.display = 'flex';
-        userIcon.src = user.photoURL;
-        userName.textContent = user.displayName;
-    } else {
-        loginBtn.style.display = 'block';
-        userInfo.style.display = 'none';
-        userIcon.src = '';
-        userName.textContent = '';
-    }
-}
-
-function renderData(dayData) {
     container.innerHTML = '';
     
     if (dayData) {
@@ -376,6 +191,7 @@ function renderData(dayData) {
         globalCommentInput.value = "";
         addSubject();
     }
+    // generateTextはaddSubject内で呼ばれるため不要
 }
 
 function migrateOldDataIfNeeded() {
