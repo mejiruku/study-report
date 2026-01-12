@@ -8,9 +8,9 @@ if ('serviceWorker' in navigator) {
 }
 
 // --- アプリ本体のロジック ---
-const subjectList = ["選択してください", "数学","数I", "数A", "数II", "数B", "数C", "理科","生物基礎", "物理基礎", "化学基礎", "生物", "化学", "英語", "英コミュ", "論評", "CS", "その他"];
-const mathSubjects = ["数学","数I", "数A", "数II", "数B", "数C"];
-const scienceSubjects = ["理科","生物基礎", "物理基礎", "化学基礎", "生物", "化学"];
+const subjectList = ["選択してください", "数学", "数I", "数A", "数II", "数B", "数C", "理科", "生物基礎", "物理基礎", "化学基礎", "生物", "化学", "英語", "英コミュ", "論評", "CS", "その他"];
+const mathSubjects = ["数学", "数I", "数A", "数II", "数B", "数C"];
+const scienceSubjects = ["理科", "生物基礎", "物理基礎", "化学基礎", "生物", "化学"];
 const englishSubjects = ["英語", "英コミュ", "論評", "CS"];
 
 const hoursOptions = Array.from({ length: 11 }, (_, i) => `<option value="${i}">${i}</option>`).join('');
@@ -20,8 +20,21 @@ const container = document.getElementById('subjects-container');
 const outputText = document.getElementById('output-text');
 const screenTotal = document.getElementById('screen-total');
 const globalCommentInput = document.getElementById('global-comment-text');
+const dateInput = document.getElementById('report-date');
 
-window.onload = () => loadData();
+// デフォルトの日付を今日に設定
+window.onload = () => {
+    const today = new Date().toISOString().split('T')[0];
+    dateInput.value = today;
+    loadData();
+    migrateOldDataIfNeeded();
+};
+
+dateInput.addEventListener('change', () => {
+    loadData();
+    // 日付変更時に結果表示をリセットしないと前の日の内容が残る場合があるので再生成
+    generateText(); 
+});
 
 function addSubject(initialData = null) {
     const div = document.createElement('div');
@@ -73,15 +86,15 @@ function removeRow(btn) {
 function generateText() {
     const rows = document.querySelectorAll('.subject-row');
     let totalMinutes = 0, bodyContent = "", displayGroups = new Set(), saveDataArray = [];
-    let validSubjectCount = 0; 
-    
+    let validSubjectCount = 0;
+
     rows.forEach(row => {
         const selectValue = row.querySelector('.subject-select').value;
         const otherValue = row.querySelector('.other-subject-input').value;
         const text = row.querySelector('.subject-text').value;
         const h = parseInt(row.querySelector('.time-h').value) || 0;
         const m = parseInt(row.querySelector('.time-m').value) || 0;
-        
+
         saveDataArray.push({ select: selectValue, other: otherValue, text: text, h: h, m: m });
 
         if (selectValue === "") return;
@@ -108,56 +121,123 @@ function generateText() {
     const totalH = Math.floor(totalMinutes / 60);
     const totalM = totalMinutes % 60;
     const globalComment = globalCommentInput.value;
-    
+    const currentDateStr = dateInput.value;
+
     let header = (displayGroups.size > 0) ? `今日は${Array.from(displayGroups).join('と')}をやりました\n` : `今日の学習報告\n`;
     let finalText = header + bodyContent;
-    
-    // 2教科以上かつ合計が0より大きい場合のみ合計時間を表示
+
+    // 2教科以上かつ合計が0より大きい場合のみ合計時間を表示 (古い仕様も維持しつつ、ヘッダーにも追加したので重複するが、本文用として残すか検討。一旦残す)
     if (validSubjectCount >= 2 && totalMinutes > 0) {
         let totalTimeStr = (totalM === 0) ? `${totalH}時間` : `${totalH}時間${totalM}分`;
         finalText += `合計勉強時間 ${totalTimeStr}\n`;
     }
-    
+
     if (globalComment.trim() !== "") {
         finalText += `\n\n${globalComment}`;
     }
 
     screenTotal.innerText = `合計: ${totalH}時間 ${totalM}分`;
     outputText.value = finalText;
-    saveToLocalStorage(saveDataArray, globalComment);
+    
+    // 現在の日付に対して保存
+    saveToLocalStorage(currentDateStr, saveDataArray, globalComment);
 }
 
-function saveToLocalStorage(subjects, comment) {
-    localStorage.setItem('studyReportData', JSON.stringify({ subjects: subjects, comment: comment }));
+// ------ ストレージ関連 (日付対応) ------
+
+// データ構造:
+// localStorage['studyReportAllData'] = JSON.stringify({
+//    "2025-01-01": { subjects: [...], comment: "..." },
+//    "2025-01-02": { subjects: [...], comment: "..." }
+// });
+
+function getAllData() {
+    const json = localStorage.getItem('studyReportAllData');
+    if (!json) return {};
+    try {
+        return JSON.parse(json);
+    } catch (e) {
+        console.error("Data parse error", e);
+        return {};
+    }
+}
+
+function saveToLocalStorage(dateKey, subjects, comment) {
+    const allData = getAllData();
+    // 空データでも保存して、その日の記録として残す（あるいは削除するロジックにするか？今回は上書き保存）
+    // もし完全に空ならキーを削除する手もあるが、シンプルに保存する
+    allData[dateKey] = { subjects: subjects, comment: comment };
+    localStorage.setItem('studyReportAllData', JSON.stringify(allData));
 }
 
 function loadData() {
-    const savedData = localStorage.getItem('studyReportData');
+    const dateKey = dateInput.value;
+    if (!dateKey) return;
+
+    const allData = getAllData();
+    const dayData = allData[dateKey];
+
     container.innerHTML = '';
-    if (savedData) {
-        try {
-            const parsedData = JSON.parse(savedData);
-            globalCommentInput.value = parsedData.comment || "";
-            if (parsedData.subjects && parsedData.subjects.length > 0) {
-                parsedData.subjects.forEach(sub => addSubject(sub));
-            } else {
-                addSubject();
-            }
-        } catch (e) {
+    
+    if (dayData) {
+        globalCommentInput.value = dayData.comment || "";
+        if (dayData.subjects && dayData.subjects.length > 0) {
+            dayData.subjects.forEach(sub => addSubject(sub));
+        } else {
             addSubject();
         }
     } else {
+        // データがない日は空の行を一つ追加
+        globalCommentInput.value = "";
         addSubject();
+    }
+    // generateTextはaddSubject内で呼ばれるため不要
+}
+
+function migrateOldDataIfNeeded() {
+    // 旧データがあるか確認
+    const oldDataJson = localStorage.getItem('studyReportData');
+    if (oldDataJson) {
+        try {
+            const oldData = JSON.parse(oldDataJson);
+            // 今日の日付にデータを移行
+            const today = new Date().toISOString().split('T')[0];
+            const allData = getAllData();
+            
+            // 既に今日のデータがある場合は上書きしないよう配慮するか、
+            // 初回移行なので、まあ上書きでも良いが、既存データがない場合のみ移行する
+            if (!allData[today]) {
+                allData[today] = oldData;
+                localStorage.setItem('studyReportAllData', JSON.stringify(allData));
+                alert("古いデータを本日のデータとして復元しました。");
+            }
+            
+            // 旧データ削除 (あるいはバックアップとして残すか？今回は削除)
+            localStorage.removeItem('studyReportData');
+            
+            // 現在表示中の日付が今日ならリロード
+            if (dateInput.value === today) {
+                loadData();
+            }
+        } catch (e) {
+            console.error("Migration failed", e);
+        }
     }
 }
 
 function resetData() {
-    if (confirm("入力内容をすべて消去しますか？")) {
-        localStorage.removeItem('studyReportData');
+    if (confirm("表示中の日付の入力内容をすべて消去しますか？")) {
+        const dateKey = dateInput.value;
+        const allData = getAllData();
+        
+        // その日のデータを削除
+        delete allData[dateKey];
+        localStorage.setItem('studyReportAllData', JSON.stringify(allData));
+
         container.innerHTML = '';
         globalCommentInput.value = '';
-        addSubject(); // 最初の1行を追加
-        generateText(); // テキストエリアを空にする
+        addSubject(); 
+        generateText(); 
     }
 }
 
@@ -166,4 +246,50 @@ function copyToClipboard() {
     copyTarget.select();
     document.execCommand("copy");
     alert("コピーしました");
+}
+
+// ------ エクスポート & インポート ------
+
+function exportData() {
+    const allData = localStorage.getItem('studyReportAllData');
+    if (!allData) {
+        alert("保存されたデータがありません。");
+        return;
+    }
+    const blob = new Blob([allData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `study_report_backup_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function importData(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const json = e.target.result;
+            // JSONのバリデーションを簡易的に行う
+            const data = JSON.parse(json);
+            if (typeof data !== 'object') throw new Error("Invalid format");
+
+            if (confirm("現在のデータを上書きして取り込みますか？")) {
+                localStorage.setItem('studyReportAllData', JSON.stringify(data));
+                loadData();
+                alert("データの取り込みが完了しました。");
+            }
+        } catch (err) {
+            alert("ファイルの読み込みに失敗しました。正しいJSONファイルか確認してください。");
+            console.error(err);
+        }
+        // inputをリセット
+        input.value = '';
+    };
+    reader.readAsText(file);
 }
