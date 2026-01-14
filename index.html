@@ -5,16 +5,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>StudyReport</title>
-    <meta name="data-app-version" content="1.1.0">
-    <link rel="stylesheet" href="./css/style.css?v=1.1.0">
-    <link rel="manifest" href="./js/manifest.json?v=1.0.0">
+    <meta name="data-app-version" content="1.2.0">
+    <link rel="stylesheet" href="./css/style.css?v=1.1.1">
+    <link rel="manifest" href="./js/manifest.json?v=1.1.0">
     <link rel="icon" type="image/x-icon" href="./assets/favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon-180x180.png">
 </head>
 
 <body>
     <div class="container">
-        <h2>勉強報告メール作成</h2>
+        <div class="header-container">
+            <div class="header-title-box">
+                <h2>勉強報告メール作成</h2>
+                <span id="save-status" class="save-status"></span>
+            </div>
+            <div id="auth-container" class="auth-container">
+                <img id="user-icon" src="" alt="" style="width: 28px; height: 28px; border-radius: 50%; display: none; object-fit: cover;">
+                <span id="user-display" style="font-size: 0.9em; display: none;"></span>
+                <button id="login-btn" onclick="login()" class="auth-btn login">Googleでログイン</button>
+                <button id="logout-btn" onclick="logout()" class="auth-btn logout" style="display: none;">ログアウト</button>
+            </div>
+        </div>
 
         <div class="date-section">
             <label for="report-date">日付: </label>
@@ -44,6 +55,15 @@
             <input type="file" id="import-file" style="display:none" onchange="importData(this)" accept=".json">
         </div>
     </div>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <!-- Init Firebase -->
+    <script src="./js/firebase-init.js?v=custom"></script>
+
+    <!-- App Logic -->
     <script src="./js/script.js?v=1.1.0" async></script>
 </body>
 
