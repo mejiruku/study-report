@@ -256,7 +256,10 @@ function generateText() {
 
     // 2教科以上かつ合計が0より大きい場合のみ合計時間を表示 (ヘッダーと重複するが本文用)
     if (validSubjectCount >= 2 && totalMinutes > 0) {
-        let totalTimeStr = (totalM === 0) ? `${totalH}時間` : `${totalH}時間${totalM}分`;
+        let totalTimeStr = "";
+        if (totalH > 0 && totalM > 0) totalTimeStr = `${totalH}時間${totalM}分`;
+        else if (totalH > 0 && totalM === 0) totalTimeStr = `${totalH}時間`;
+        else totalTimeStr = `${totalM}分`;
         // 【修正箇所】先頭に \n を追加して改行を入れています
         finalText += `\n合計勉強時間 ${totalTimeStr}\n`;
     }
