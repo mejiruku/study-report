@@ -44,8 +44,7 @@ window.onload = () => {
         updateAuthUI(user);
         if (user) {
             // Logged In: 
-            // 1. Delete Local Data (Strict Rule) - *Only if not already cleared?* 
-            // The requirement says "Data is deleted when YOU LOG IN". 
+            // 1. Delete Local Data (Strict Rule) - *Only if not already cleared?* // The requirement says "Data is deleted when YOU LOG IN". 
             // Since onAuthStateChanged fires on reload too, we should be careful NOT to wipe session data if we are already logged in.
             // However, the rule "Delete local data when logged in" implies local storage should be CLEAN when in logged-in mode.
             // So, simply wiping it is correct to ensure no local data persists.
@@ -244,7 +243,7 @@ function generateText() {
         else if (h === 0 && m > 0) timeStr = `${m}分`;
         else timeStr = `0分`;
 
-        bodyContent += `\n${subjectDisplayName}\n${text}\n勉強時間 ${timeStr}\n\n`;
+        bodyContent += `\n${subjectDisplayName}\n${text}\n勉強時間 ${timeStr}\n`;
     });
 
     const totalH = Math.floor(totalMinutes / 60);
@@ -255,10 +254,11 @@ function generateText() {
     let header = (displayGroups.size > 0) ? `今日は${Array.from(displayGroups).join('と')}をやりました\n` : `今日の学習報告\n`;
     let finalText = header + bodyContent;
 
-    // 2教科以上かつ合計が0より大きい場合のみ合計時間を表示 (古い仕様も維持しつつ、ヘッダーにも追加したので重複するが、本文用として残すか検討。一旦残す)
+    // 2教科以上かつ合計が0より大きい場合のみ合計時間を表示 (ヘッダーと重複するが本文用)
     if (validSubjectCount >= 2 && totalMinutes > 0) {
         let totalTimeStr = (totalM === 0) ? `${totalH}時間` : `${totalH}時間${totalM}分`;
-        finalText += `合計勉強時間 ${totalTimeStr}\n`;
+        // 【修正箇所】先頭に \n を追加して改行を入れています
+        finalText += `\n合計勉強時間 ${totalTimeStr}\n`;
     }
 
     if (globalComment.trim() !== "") {
