@@ -394,8 +394,11 @@ function renderData(dayData) {
         addSubject();
     }
     // generateTextはaddSubject内で呼ばれるため不要 (ただし初回ロード時は合計計算のため呼んでもいいが、addSubjectが呼ぶのでOK)
-    isLoading = false; // End loading mode
-    updateSaveStatus('saved'); // Initial state is "saved" (sync with DB)
+    // 保存タイマー（1.5秒）が発火する可能性があるため、少し遅延させてisLoadingを解除
+    setTimeout(() => {
+        isLoading = false; // End loading mode
+        updateSaveStatus('saved'); // Initial state is "saved" (sync with DB)
+    }, 2000); // 保存タイマー（1.5秒）より長く待つ
 }
 
 
