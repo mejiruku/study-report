@@ -419,10 +419,18 @@ function loadData() {
     const dateKey = dateInput.value;
     if (!dateKey) return;
 
+    // ロード開始時にisLoadingをセット（レースコンディション防止）
+    isLoading = true;
+
     if (currentUser) {
         // Load from Firestore
+        const requestedDateKey = dateKey; // クロージャでキャプチャ
         db.collection('users').doc(currentUser.uid).collection('reports').doc(dateKey).get()
         .then(doc => {
+            // ロード中に日付が変わった場合は無視
+            if (dateInput.value !== requestedDateKey) {
+                return;
+            }
             if (doc.exists) {
                 const data = doc.data();
                 renderData(data);
@@ -431,7 +439,9 @@ function loadData() {
             }
         }).catch(err => {
             console.error("Error loading", err);
-            renderData(null);
+            if (dateInput.value === requestedDateKey) {
+                renderData(null);
+            }
         });
     } else {
         // Load from LocalStorage
@@ -520,10 +530,14 @@ function resetData() {
 }
 
 function resetUI() {
+    isLoading = true; // 保存を防止
     container.innerHTML = '';
     globalCommentInput.value = '';
-    addSubject(); 
-    generateText(); 
+    addSubject();
+    isLoading = false;
+    // addSubjectはisLoading=falseの後に呼ばれるのでgenerateTextが実行される
+    // 明示的に呼び出す
+    generateText();
 }
 
 function copyToClipboard() {
