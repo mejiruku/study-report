@@ -35,8 +35,12 @@ let isLoading = false; // Flag to prevent auto-save during initial load
 
 // デフォルトの日付を今日に設定 & Auth監視
 window.onload = () => {
-    const today = new Date().toISOString().split('T')[0];
-    dateInput.value = today;
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const dateInputElement = document.getElementById('report-date');
+    if (dateInputElement) {
+        dateInputElement.value = today;
+    }
 
     // Auth State Listener
     auth.onAuthStateChanged(user => {
