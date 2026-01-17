@@ -159,9 +159,13 @@ function logout() {
 }
 
 dateInput.addEventListener('change', () => {
+    // 日付変更前に保存タイマーをキャンセル（古いデータが新しい日付に保存されるのを防ぐ）
+    if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+    }
     loadData();
-    // 日付変更時に結果表示をリセットしないと前の日の内容が残る場合があるので再生成
-    generateText(); 
+    // generateTextはloadData -> renderData -> addSubjectで呼ばれるため不要
 });
 
 function addSubject(initialData = null) {
@@ -192,7 +196,10 @@ function addSubject(initialData = null) {
         div.querySelector('.time-h').value = initialData.h;
         div.querySelector('.time-m').value = initialData.m;
     }
-    generateText();
+    // isLoading中はgenerateTextを呼ばない（保存が発生しない純粋な表示更新は後でまとめて行う）
+    if (!isLoading) {
+        generateText();
+    }
 }
 
 function toggleOtherInput(selectElement) {
@@ -209,6 +216,62 @@ function toggleOtherInput(selectElement) {
 function removeRow(btn) {
     btn.parentElement.remove();
     generateText();
+}
+
+// 画面表示のみ更新（保存処理なし）- データロード時に使用
+function updateDisplay() {
+    const rows = document.querySelectorAll('.subject-row');
+    let totalMinutes = 0, bodyContent = "", displayGroups = new Set();
+    let validSubjectCount = 0;
+
+    rows.forEach(row => {
+        const selectValue = row.querySelector('.subject-select').value;
+        const otherValue = row.querySelector('.other-subject-input').value;
+        const text = row.querySelector('.subject-text').value;
+        const h = parseInt(row.querySelector('.time-h').value) || 0;
+        const m = parseInt(row.querySelector('.time-m').value) || 0;
+
+        if (selectValue === "") return;
+
+        validSubjectCount++;
+        let subjectDisplayName = (selectValue === "その他") ? (otherValue || "その他") : selectValue;
+        totalMinutes += (h * 60) + m;
+
+        if (mathSubjects.includes(selectValue)) displayGroups.add("数学");
+        else if (scienceSubjects.includes(selectValue)) displayGroups.add("理科");
+        else if (englishSubjects.includes(selectValue)) displayGroups.add("英語");
+        else displayGroups.add(subjectDisplayName);
+
+        let timeStr = "";
+        if (h > 0 && m > 0) timeStr = `${h}時間${m}分`;
+        else if (h > 0 && m === 0) timeStr = `${h}時間`;
+        else if (h === 0 && m > 0) timeStr = `${m}分`;
+        else timeStr = `0分`;
+
+        bodyContent += `\n${subjectDisplayName}\n${text}\n勉強時間 ${timeStr}\n`;
+    });
+
+    const totalH = Math.floor(totalMinutes / 60);
+    const totalM = totalMinutes % 60;
+    const globalComment = globalCommentInput.value;
+
+    let header = (displayGroups.size > 0) ? `今日は${Array.from(displayGroups).join('と')}をやりました\n` : `今日の学習報告\n`;
+    let finalText = header + bodyContent;
+
+    if (validSubjectCount >= 2 && totalMinutes > 0) {
+        let totalTimeStr = "";
+        if (totalH > 0 && totalM > 0) totalTimeStr = `${totalH}時間${totalM}分`;
+        else if (totalH > 0 && totalM === 0) totalTimeStr = `${totalH}時間`;
+        else totalTimeStr = `${totalM}分`;
+        finalText += `\n合計勉強時間 ${totalTimeStr}\n`;
+    }
+
+    if (globalComment.trim() !== "") {
+        finalText += `\n\n${globalComment}`;
+    }
+
+    screenTotal.innerText = `合計: ${totalH}時間 ${totalM}分`;
+    outputText.value = finalText;
 }
 
 function generateText() {
@@ -393,12 +456,12 @@ function renderData(dayData) {
         globalCommentInput.value = "";
         addSubject();
     }
-    // generateTextはaddSubject内で呼ばれるため不要 (ただし初回ロード時は合計計算のため呼んでもいいが、addSubjectが呼ぶのでOK)
-    // 保存タイマー（1.5秒）が発火する可能性があるため、少し遅延させてisLoadingを解除
-    setTimeout(() => {
-        isLoading = false; // End loading mode
-        updateSaveStatus('saved'); // Initial state is "saved" (sync with DB)
-    }, 2000); // 保存タイマー（1.5秒）より長く待つ
+    
+    // データロード完了後、表示を更新（保存はしない）
+    updateDisplay();
+    
+    isLoading = false; // End loading mode
+    updateSaveStatus('saved'); // Initial state is "saved" (sync with DB)
 }
 
 
