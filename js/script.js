@@ -125,8 +125,15 @@ window.onload = () => {
         currentUser = user;
         updateAuthUI(user);
         if (user) {
-            // Logged In: Perform bidirectional sync
-            syncDataOnLogin();
+            // Logged In: 
+            // 1. Delete Local Data (Strict Rule) - *Only if not already cleared?* // The requirement says "Data is deleted when YOU LOG IN". 
+            // Since onAuthStateChanged fires on reload too, we should be careful NOT to wipe session data if we are already logged in.
+            // However, the rule "Delete local data when logged in" implies local storage should be CLEAN when in logged-in mode.
+            // So, simply wiping it is correct to ensure no local data persists.
+            localStorage.removeItem('studyReportAllData'); 
+            
+            // 2. Load from Firestore
+            loadData();
         } else {
             // Guest Mode: Load from Local Storage
             loadData();
@@ -402,82 +409,15 @@ function performSave(dateKey, subjects, comment) {
     isSaving = true;
     saveTimer = null;
     
-    // 変更内容を検出してログに記録
-    const changeDetail = detectChanges(dateKey, subjects, comment);
-    
     if (currentUser) {
-        saveToFirestoreWithLog(dateKey, subjects, comment, changeDetail);
+        saveToFirestore(dateKey, subjects, comment);
     } else {
-        saveToLocalStorageWithLog(dateKey, subjects, comment, changeDetail);
+        saveToLocalStorage(dateKey, subjects, comment);
     }
-}
-
-// 変更内容を検出する関数
-function detectChanges(dateKey, newSubjects, newComment) {
-    let oldData = null;
-    
-    if (currentUser) {
-        // クラウドの場合は直前のキャッシュから取得（ない場合は新規扱い）
-        oldData = window._lastLoadedData || null;
-    } else {
-        // ローカルの場合
-        const allData = getAllData();
-        oldData = allData[dateKey] || null;
-    }
-    
-    if (!oldData) {
-        return '新規データを作成';
-    }
-    
-    const changes = [];
-    const oldSubjects = oldData.subjects || [];
-    const oldComment = oldData.comment || '';
-    
-    // 教科の変更を検出
-    const maxLen = Math.max(newSubjects.length, oldSubjects.length);
-    for (let i = 0; i < maxLen; i++) {
-        const newSub = newSubjects[i];
-        const oldSub = oldSubjects[i];
-        
-        if (!oldSub && newSub && newSub.select) {
-            // 新規追加
-            const subjectName = newSub.select === 'その他' ? (newSub.other || 'その他') : newSub.select;
-            changes.push(`${subjectName}を追加`);
-        } else if (oldSub && !newSub) {
-            // 削除
-            const subjectName = oldSub.select === 'その他' ? (oldSub.other || 'その他') : oldSub.select;
-            changes.push(`${subjectName}を削除`);
-        } else if (oldSub && newSub) {
-            // 変更を検出
-            const oldName = oldSub.select === 'その他' ? (oldSub.other || 'その他') : oldSub.select;
-            const newName = newSub.select === 'その他' ? (newSub.other || 'その他') : newSub.select;
-            
-            if (oldSub.select !== newSub.select || oldSub.other !== newSub.other) {
-                changes.push(`教科を「${oldName}」→「${newName}」に変更`);
-            } else if (oldSub.text !== newSub.text) {
-                changes.push(`${newName}: 内容を編集`);
-            } else if (oldSub.h !== newSub.h || oldSub.m !== newSub.m) {
-                changes.push(`${newName}: 時間を変更`);
-            }
-        }
-    }
-    
-    // コメントの変更を検出
-    if (oldComment !== newComment) {
-        if (!oldComment && newComment) {
-            changes.push('コメントを追加');
-        } else if (oldComment && !newComment) {
-            changes.push('コメントを削除');
-        } else {
-            changes.push('コメントを編集');
-        }
-    }
-    
-    return changes.length > 0 ? changes.join(', ') : '軽微な変更';
 }
 
 // ------ Firestore Saving ------
-function saveToFirestoreWithLog(dateKey, subjects, comment, changeDetail) {
+function saveToFirestore(dateKey, subjects, comment) {
     if (!currentUser) {
         isSaving = false;
         return;
@@ -492,12 +432,6 @@ function saveToFirestoreWithLog(dateKey, subjects, comment, changeDetail) {
         console.log("Saved to Firestore");
         isSaving = false;
         updateSaveStatus('saved');
-        
-        // 変更詳細をログに記録
-        addSyncLog('edit', dateKey, changeDetail);
-        
-        // 現在のデータをキャッシュ
-        window._lastLoadedData = { subjects, comment };
     })
     .catch(err => {
         console.error("Error saving", err);
@@ -525,20 +459,13 @@ function getAllData() {
     }
 }
 
-function saveToLocalStorageWithLog(dateKey, subjects, comment, changeDetail) {
+function saveToLocalStorage(dateKey, subjects, comment) {
     try {
         const allData = getAllData();
-        allData[dateKey] = { 
-            subjects: subjects, 
-            comment: comment,
-            updatedAt: Date.now()  // ミリ秒タイムスタンプ
-        };
+        allData[dateKey] = { subjects: subjects, comment: comment };
         localStorage.setItem('studyReportAllData', JSON.stringify(allData));
-        
-        // 変更詳細をログに記録
-        addSyncLog('edit', dateKey, changeDetail);
-        
         setTimeout(() => {
+            // Simulate async for consistency or just direct
             isSaving = false;
             updateSaveStatus('saved');
         }, 300);
@@ -588,17 +515,6 @@ function loadData() {
 function renderData(dayData) {
     isLoading = true; // Start loading mode
     container.innerHTML = '';
-    
-    // 変更検出用にロードしたデータをキャッシュ
-    if (dayData) {
-        window._lastLoadedData = {
-            subjects: dayData.subjects || [],
-            comment: dayData.comment || ''
-        };
-    } else {
-        window._lastLoadedData = null;
-    }
-    
     if (dayData) {
         globalCommentInput.value = dayData.comment || "";
         if (dayData.subjects && dayData.subjects.length > 0) {
@@ -811,260 +727,4 @@ function importToCloud(dataObj) {
         showPopup("一部のデータの取り込みに失敗しました。コンソールを確認してください。");
         updateSaveStatus('error');
     });
-}
-
-// ------ 双方向同期機能 ------
-
-async function syncDataOnLogin() {
-    updateSaveStatus('saving');
-    
-    // 1. ローカルデータを取得
-    const localData = getAllData();
-    
-    // 2. ローカルデータが空なら同期不要、クラウドから読み込むだけ
-    if (Object.keys(localData).length === 0) {
-        loadData();
-        return;
-    }
-    
-    try {
-        // 3. クラウドの全データを取得
-        const cloudData = await fetchAllCloudData();
-        
-        // 4. 日付ごとにマージ（新しい方を採用）
-        const { toUpload, toDownload } = compareAndMerge(localData, cloudData);
-        
-        // 5. ローカル → クラウドへアップロード
-        if (Object.keys(toUpload).length > 0) {
-            await uploadToCloud(toUpload);
-        }
-        
-        // 6. マージ完了後、ローカルストレージをクリア
-        localStorage.removeItem('studyReportAllData');
-        
-        // 7. 同期完了ログ
-        if (Object.keys(toUpload).length > 0 || Object.keys(toDownload).length > 0) {
-            addSyncLog('sync', '', `同期完了: ${Object.keys(toUpload).length}件アップロード, ${Object.keys(toDownload).length}件はクラウドを優先`);
-        }
-        
-        // 8. 現在の日付のデータを読み込み
-        loadData();
-        
-    } catch (err) {
-        console.error("Sync failed", err);
-        updateSaveStatus('error');
-        showPopup("同期に失敗しました。クラウドからデータを読み込みます。");
-        localStorage.removeItem('studyReportAllData');
-        loadData();
-    }
-}
-
-async function fetchAllCloudData() {
-    if (!currentUser) return {};
-    
-    const snapshot = await db.collection('users').doc(currentUser.uid).collection('reports').get();
-    const cloudData = {};
-    snapshot.forEach(doc => {
-        cloudData[doc.id] = doc.data();
-    });
-    return cloudData;
-}
-
-function compareAndMerge(localData, cloudData) {
-    const toUpload = {};
-    const toDownload = {};
-    
-    // すべての日付キーを取得
-    const allDates = new Set([...Object.keys(localData), ...Object.keys(cloudData)]);
-    
-    allDates.forEach(dateKey => {
-        const local = localData[dateKey];
-        const cloud = cloudData[dateKey];
-        
-        if (local && !cloud) {
-            // ローカルにのみ存在 → アップロード
-            toUpload[dateKey] = local;
-            addSyncLog('upload', dateKey, 'ローカルからクラウドへアップロード');
-        } else if (!local && cloud) {
-            // クラウドにのみ存在 → ダウンロード（ログイン後はクラウドから読み込むので何もしない）
-            toDownload[dateKey] = cloud;
-        } else if (local && cloud) {
-            // 両方に存在 → タイムスタンプ比較
-            const localTime = local.updatedAt || 0;
-            // Firestoreのタイムスタンプをミリ秒に変換
-            let cloudTime = 0;
-            if (cloud.updatedAt) {
-                if (cloud.updatedAt.toMillis) {
-                    cloudTime = cloud.updatedAt.toMillis();
-                } else if (typeof cloud.updatedAt === 'number') {
-                    cloudTime = cloud.updatedAt;
-                }
-            }
-            
-            if (localTime > cloudTime) {
-                // ローカルが新しい → アップロード
-                toUpload[dateKey] = local;
-                addSyncLog('upload', dateKey, 'ローカルが新しいためアップロード');
-            } else {
-                // クラウドが新しいまたは同じ → クラウドを優先
-                toDownload[dateKey] = cloud;
-            }
-        }
-    });
-    
-    return { toUpload, toDownload };
-}
-
-async function uploadToCloud(dataToUpload) {
-    if (!currentUser) return;
-    
-    const reportsRef = db.collection('users').doc(currentUser.uid).collection('reports');
-    const promises = [];
-    
-    Object.keys(dataToUpload).forEach(dateKey => {
-        const data = dataToUpload[dateKey];
-        promises.push(
-            reportsRef.doc(dateKey).set({
-                subjects: data.subjects,
-                comment: data.comment,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            })
-        );
-    });
-    
-    await Promise.all(promises);
-}
-
-// ------ 操作ログ機能 ------
-
-function getSyncLogs() {
-    const logsJson = localStorage.getItem('studyReportSyncLogs');
-    if (!logsJson) return [];
-    try {
-        return JSON.parse(logsJson);
-    } catch (e) {
-        return [];
-    }
-}
-
-function saveSyncLogs(logs) {
-    localStorage.setItem('studyReportSyncLogs', JSON.stringify(logs));
-}
-
-function addSyncLog(action, dateKey, detail) {
-    const now = new Date();
-    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const logData = {
-        timestamp: timestamp,
-        action: action,
-        date: dateKey || '',
-        detail: detail || '',
-        createdAt: firebase.firestore.FieldValue.serverTimestamp() // For cloud sorting
-    };
-
-    if (currentUser) {
-        // Cloud Log
-        db.collection('users').doc(currentUser.uid).collection('logs').add(logData)
-        .then(() => console.log('Log added to cloud'))
-        .catch(err => console.error('Failed to add cloud log', err));
-    } else {
-        // Local Log
-        const logs = getSyncLogs();
-        // createdAtはローカル保存時は不要または別形式になるため、ここでは除外または無視
-        delete logData.createdAt; 
-        logs.unshift(logData);
-        saveSyncLogs(logs);
-    }
-}
-
-async function showSyncLog() {
-    const modal = document.getElementById('sync-log-modal');
-    const logList = document.getElementById('sync-log-list');
-    
-    // Clear current list and show loading if needed
-    logList.innerHTML = '<div class="sync-log-empty">読み込み中...</div>';
-    modal.classList.add('show');
-
-    let logs = [];
-
-    if (currentUser) {
-        // Fetch from Cloud
-        try {
-            const snapshot = await db.collection('users').doc(currentUser.uid).collection('logs')
-                                     .orderBy('createdAt', 'desc')
-                                     .limit(50)
-                                     .get();
-            
-            logs = snapshot.docs.map(doc => {
-                const data = doc.data();
-                return {
-                    timestamp: data.timestamp, // Display string
-                    action: data.action,
-                    date: data.date,
-                    detail: data.detail
-                };
-            });
-        } catch (err) {
-            console.error("Failed to fetch logs", err);
-            logList.innerHTML = '<div class="sync-log-empty">ログの取得に失敗しました</div>';
-            return;
-        }
-    } else {
-        // Fetch from Local
-        logs = getSyncLogs();
-    }
-    
-    if (logs.length === 0) {
-        logList.innerHTML = '<div class="sync-log-empty">操作ログはありません</div>';
-    } else {
-        logList.innerHTML = logs.map(log => {
-            const actionLabel = log.action === 'upload' ? 'アップロード' :
-                               log.action === 'download' ? 'ダウンロード' :
-                               log.action === 'edit' ? '編集' :
-                               log.action === 'sync' ? '同期' : log.action;
-            return `
-                <div class="sync-log-item">
-                    <span class="log-time">${log.timestamp}</span>
-                    <span class="log-action ${log.action}">[${actionLabel}]</span>
-                    ${log.date ? `<span class="log-date">${log.date}</span>` : ''}
-                    <div class="log-detail">${log.detail}</div>
-                </div>
-            `;
-        }).join('');
-    }
-}
-
-function closeSyncLogModal() {
-    const modal = document.getElementById('sync-log-modal');
-    modal.classList.remove('show');
-}
-
-async function clearSyncLog() {
-    const confirmed = await showConfirm("すべての操作ログを削除しますか？");
-    if (confirmed) {
-        if (currentUser) {
-            // Clear Cloud Logs
-            try {
-                const collectionRef = db.collection('users').doc(currentUser.uid).collection('logs');
-                const snapshot = await collectionRef.get();
-                const batch = db.batch();
-                
-                snapshot.docs.forEach((doc) => {
-                    batch.delete(doc.ref);
-                });
-                
-                await batch.commit();
-                showPopup("操作ログを削除しました");
-                showSyncLog(); // Reload
-            } catch (err) {
-                console.error("Failed to delete logs", err);
-                showPopup("ログの削除に失敗しました");
-            }
-        } else {
-            // Clear Local Logs
-            localStorage.removeItem('studyReportSyncLogs');
-            showSyncLog(); // Reload
-            showPopup("操作ログを削除しました");
-        }
-    }
 }
