@@ -448,3 +448,37 @@ textarea {
     transform: translateY(0) scale(1);
   }
 }
+
+/* モーダルのスマホ対応 */
+@media (max-width: 480px) {
+  .popup-content {
+    padding: 20px 15px;
+    margin: 10px;
+    width: calc(100% - 20px);
+    max-width: none;
+    border-radius: 10px;
+  }
+
+  .popup-content p {
+    font-size: 1em;
+    margin: 0 0 15px 0;
+    word-break: break-word;
+  }
+
+  .popup-btn {
+    padding: 14px 25px;
+    font-size: 0.95em;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .confirm-buttons {
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .confirm-buttons .popup-btn {
+    width: 100%;
+  }
+}
