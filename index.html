@@ -55,6 +55,26 @@
             <input type="file" id="import-file" style="display:none" onchange="importData(this)" accept=".json">
         </div>
     </div>
+
+    <!-- Custom Popup Modal -->
+    <div id="popup-modal" class="popup-overlay">
+        <div class="popup-content">
+            <p id="popup-message"></p>
+            <button id="popup-close-btn" class="popup-btn">OK</button>
+        </div>
+    </div>
+
+    <!-- Custom Confirm Modal -->
+    <div id="confirm-modal" class="popup-overlay">
+        <div class="popup-content">
+            <p id="confirm-message"></p>
+            <div class="confirm-buttons">
+                <button id="confirm-cancel-btn" class="popup-btn cancel">キャンセル</button>
+                <button id="confirm-ok-btn" class="popup-btn">OK</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>

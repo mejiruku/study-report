@@ -7,6 +7,84 @@ if ('serviceWorker' in navigator) {
     });
 }
 
+// --- カスタムポップアップ関数 ---
+function showPopup(message) {
+    const modal = document.getElementById('popup-modal');
+    const messageEl = document.getElementById('popup-message');
+    const closeBtn = document.getElementById('popup-close-btn');
+    
+    if (!modal || !messageEl || !closeBtn) {
+        // Fallback to native alert if elements don't exist
+        alert(message);
+        return;
+    }
+    
+    messageEl.innerText = message;
+    modal.classList.add('show');
+    
+    const closePopup = () => {
+        modal.classList.remove('show');
+        closeBtn.removeEventListener('click', closePopup);
+        modal.removeEventListener('click', handleBackdropClick);
+    };
+    
+    const handleBackdropClick = (e) => {
+        if (e.target === modal) {
+            closePopup();
+        }
+    };
+    
+    closeBtn.addEventListener('click', closePopup);
+    modal.addEventListener('click', handleBackdropClick);
+}
+
+// --- カスタム確認ダイアログ関数 ---
+function showConfirm(message) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('confirm-modal');
+        const messageEl = document.getElementById('confirm-message');
+        const okBtn = document.getElementById('confirm-ok-btn');
+        const cancelBtn = document.getElementById('confirm-cancel-btn');
+        
+        if (!modal || !messageEl || !okBtn || !cancelBtn) {
+            // Fallback to native confirm if elements don't exist
+            resolve(confirm(message));
+            return;
+        }
+        
+        messageEl.innerText = message;
+        modal.classList.add('show');
+        
+        const cleanup = () => {
+            modal.classList.remove('show');
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            modal.removeEventListener('click', handleBackdropClick);
+        };
+        
+        const handleOk = () => {
+            cleanup();
+            resolve(true);
+        };
+        
+        const handleCancel = () => {
+            cleanup();
+            resolve(false);
+        };
+        
+        const handleBackdropClick = (e) => {
+            if (e.target === modal) {
+                cleanup();
+                resolve(false);
+            }
+        };
+        
+        okBtn.addEventListener('click', handleOk);
+        cancelBtn.addEventListener('click', handleCancel);
+        modal.addEventListener('click', handleBackdropClick);
+    });
+}
+
 // --- アプリ本体のロジック ---
 const subjectList = ["選択してください", "数学", "数I", "数A", "数II", "数B", "数C", "理科", "生物基礎", "物理基礎", "化学基礎", "生物", "化学", "英語", "英コミュ", "論評", "CS", "その他"];
 const mathSubjects = ["数学", "数I", "数A", "数II", "数B", "数C"];
@@ -118,46 +196,25 @@ function updateAuthUI(user) {
     }
 }
 
-function login() {
+async function login() {
     // Warning before login
-    if (confirm("ログインすると、現在ローカルに保存されているすべてのデータは削除され、クラウド上のデータに置き換わります。\n本当によろしいですか？")) {
+    const confirmed = await showConfirm("ログインすると、現在ローカルに保存されているすべてのデータは削除され、クラウド上のデータに置き換わります。\n本当によろしいですか？");
+    if (confirmed) {
         auth.signInWithPopup(provider).then(() => {
             // Successful login will trigger onAuthStateChanged
             // which handles the data wiping.
         }).catch(err => {
             console.error("Login failed", err);
-            alert("ログインに失敗しました");
+            showPopup("ログインに失敗しました");
         });
     }
 }
 
-function logout() {
-    if(confirm("ログアウトしますか？")) {
+async function logout() {
+    const confirmed = await showConfirm("ログアウトしますか？");
+    if (confirmed) {
         auth.signOut().then(() => {
             // Logout successful. onAuthStateChanged handles UI switch.
-            // Requirement says "Ensure displayed data is not cleared".
-            // Since we switch to loadData() which loads from LocalStorage (empty), the screen might clear.
-            // To prevent screen clearing, we might need to *save* current memory state to local? 
-            // OR just let it clear because the user is switching context.
-            // Re-reading history: "When logout... ensure displayed data is not cleared".
-            // This suggests copying current state to local storage OR just not reloading immediately.
-            // But for this specific "Strict Delete" request, "Guest Mode = Local Storage".
-            // If we logout, we are Guest. If Firestore data is still on screen, it hasn't been saved to Local.
-            // If the user wants to keep working as Guest, we should probably save the current view to Local Storage?
-            // Let's implement a "Transfer to Local" on logout if we want to keep it?
-            // Actually, the prompt says "Local data is ON when NOT Logged In".
-            // If I logout, I am "Not Logged In". So I can use Local Storage.
-            // If I want to KEEP what was on screen, I should save it to Local Storage now.
-            
-            // For now, let's just reload to fresh state to avoid confusion, 
-            // unless user specifically asked to "Keep data on logout" in previous turn (Conversation 27d9...).
-            // "Ensure displayed data is not cleared from the screen" was a previous objective.
-            // So: Do NOT call loadData() immediately? 
-            // Let's just NOT call loadData() in the `else` block of onAuthStateChanged IF it was a logout action?
-            // But onAuthStateChanged fires automatically.
-            // Let's simpler approach: Copy current memory state to Local Storage on logout?
-            // Let's stick to the CURRENT request: "Local on only when guest. Login -> Delete Local."
-            // I will implement basic logout.
         });
     }
 }
@@ -494,7 +551,7 @@ function migrateOldDataIfNeeded() {
             if (!allData[today]) {
                 allData[today] = oldData;
                 localStorage.setItem('studyReportAllData', JSON.stringify(allData));
-                alert("古いデータを本日のデータとして復元しました。");
+                showPopup("古いデータを本日のデータとして復元しました。");
             }
             
             // 旧データ削除 (あるいはバックアップとして残すか？今回は削除)
@@ -510,8 +567,9 @@ function migrateOldDataIfNeeded() {
     }
 }
 
-function resetData() {
-    if (confirm("表示中の日付の入力内容をすべて消去しますか？")) {
+async function resetData() {
+    const confirmed = await showConfirm("表示中の日付の入力内容をすべて消去しますか？");
+    if (confirmed) {
         const dateKey = dateInput.value;
         const allData = getAllData();
         
@@ -548,7 +606,7 @@ function copyToClipboard() {
     const copyTarget = document.getElementById("output-text");
     copyTarget.select();
     document.execCommand("copy");
-    alert("コピーしました");
+    showPopup("コピーしました");
 }
 
 // ------ エクスポート & インポート ------
@@ -568,14 +626,14 @@ function exportData() {
         })
         .catch(err => {
             console.error("Export failed", err);
-            alert("クラウドからのデータ取得に失敗しました。");
+            showPopup("クラウドからのデータ取得に失敗しました。");
             updateSaveStatus('error');
         });
     } else {
         // Local Export
         const allData = localStorage.getItem('studyReportAllData');
         if (!allData) {
-            alert("保存されたデータがありません。");
+            showPopup("保存されたデータがありません。");
             return;
         }
         // Validate JSON if possible, but it's raw string, so just pass parse/stringify check or direct
@@ -583,7 +641,7 @@ function exportData() {
             const parsed = JSON.parse(allData);
             downloadJSON(parsed, `study_report_local_backup_${new Date().toISOString().split('T')[0]}.json`);
         } catch(e) {
-            alert("データが破損している可能性があります。");
+            showPopup("データが破損している可能性があります。");
         }
     }
 }
@@ -606,13 +664,14 @@ function importData(input) {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         try {
             const json = e.target.result;
             const data = JSON.parse(json);
             if (typeof data !== 'object') throw new Error("Invalid format");
 
-            if (confirm("現在のデータを上書きして取り込みますか？")) {
+            const confirmed = await showConfirm("現在のデータを上書きして取り込みますか？");
+            if (confirmed) {
                 if (currentUser) {
                     // Cloud Import
                     importToCloud(data);
@@ -620,11 +679,11 @@ function importData(input) {
                     // Local Import
                     localStorage.setItem('studyReportAllData', JSON.stringify(data));
                     loadData(); // Reload current view
-                    alert("データの取り込みが完了しました。");
+                    showPopup("データの取り込みが完了しました。");
                 }
             }
         } catch (err) {
-            alert("ファイルの読み込みに失敗しました。正しいJSONファイルか確認してください。");
+            showPopup("ファイルの読み込みに失敗しました。正しいJSONファイルか確認してください。");
             console.error(err);
         }
         // Reset input
@@ -661,11 +720,11 @@ function importToCloud(dataObj) {
         console.log("All data imported to cloud");
         updateSaveStatus('saved');
         loadData(); // Reload current view
-        alert("クラウドへのデータの取り込みが完了しました。");
+        showPopup("クラウドへのデータの取り込みが完了しました。");
     })
     .catch(err => {
         console.error("Cloud import failed", err);
-        alert("一部のデータの取り込みに失敗しました。コンソールを確認してください。");
+        showPopup("一部のデータの取り込みに失敗しました。コンソールを確認してください。");
         updateSaveStatus('error');
     });
 }
