@@ -374,6 +374,11 @@ textarea {
   display: flex;
 }
 
+#popup-modal,
+#confirm-modal {
+  z-index: 1100;
+}
+
 .popup-content {
   background: white;
   padding: 25px 30px;
@@ -480,5 +485,94 @@ textarea {
 
   .confirm-buttons .popup-btn {
     width: 100%;
+  }
+}
+
+/* Sync Log Button */
+.log-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  color: white;
+  background-color: #9c27b0;
+  transition: background-color 0.2s;
+  min-width: 100px;
+}
+
+.log-btn:hover {
+  background-color: #7b1fa2;
+}
+
+/* Sync Log Modal Content */
+.log-modal-content {
+  max-width: 500px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.sync-log-list {
+  max-height: 400px;
+  overflow-y: auto;
+  text-align: left;
+  margin-bottom: 20px;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  padding: 10px;
+  background-color: #fafafa;
+}
+
+.sync-log-item {
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+  font-size: 0.9em;
+}
+
+.sync-log-item:last-child {
+  border-bottom: none;
+}
+
+.sync-log-item .log-time {
+  color: #666;
+  font-size: 0.85em;
+}
+
+.sync-log-item .log-action {
+  font-weight: bold;
+  margin-left: 5px;
+}
+
+.sync-log-item .log-action.upload {
+  color: #4caf50;
+}
+
+.sync-log-item .log-action.download {
+  color: #2196f3;
+}
+
+.sync-log-item .log-action.edit {
+  color: #ff9800;
+}
+
+.sync-log-item .log-detail {
+  color: #555;
+  margin-top: 4px;
+}
+
+.sync-log-empty {
+  text-align: center;
+  color: #999;
+  padding: 30px;
+}
+
+@media (max-width: 480px) {
+  .log-modal-content {
+    max-height: 90vh;
+  }
+  
+  .sync-log-list {
+    max-height: 50vh;
   }
 }
