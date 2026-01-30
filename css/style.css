@@ -93,9 +93,6 @@ h2 {
 }
 
 .remove-btn {
-  position: absolute;
-  top: 10px;
-  right: 10px;
   background: #ff4d4d;
   color: white;
   border: none;
@@ -571,8 +568,128 @@ textarea {
   .log-modal-content {
     max-height: 90vh;
   }
-  
+
   .sync-log-list {
     max-height: 50vh;
+  }
+}
+
+/* ====== 教科入れ替えボタン ====== */
+.row-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.move-btns {
+  display: flex;
+  gap: 4px;
+}
+
+.move-btn {
+  background: #e0e0e0;
+  color: #333;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1;
+  transition: background-color 0.2s;
+}
+
+.move-btn:hover {
+  background: #bdbdbd;
+}
+
+.move-btn:active {
+  background: #9e9e9e;
+}
+
+/* ====== 閲覧モード切り替えボタン ====== */
+.view-mode-toggle {
+  margin-left: 15px;
+  background: linear-gradient(135deg, #2196f3, #1976d2);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+}
+
+.view-mode-toggle:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+}
+
+.view-mode-toggle.active {
+  background: linear-gradient(135deg, #4caf50, #388e3c);
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+}
+
+.view-mode-toggle.active:hover {
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+}
+
+/* ====== 閲覧モード時のスタイル ====== */
+.view-mode #subjects-container,
+.view-mode .controls,
+.view-mode .global-comment-section,
+.view-mode .backup-controls {
+  display: none;
+}
+
+.view-mode .result-area {
+  margin-top: 20px;
+  border-top: none;
+  padding-top: 0;
+}
+
+.view-mode .result-area h3 {
+  display: none;
+}
+
+.view-mode #output-text {
+  height: 400px;
+  font-size: 15px;
+  background-color: #fff;
+  border: 2px solid #2196f3;
+  border-radius: 8px;
+}
+
+.view-mode .total-display {
+  font-size: 1.4em;
+  margin-bottom: 15px;
+}
+
+.view-mode .copy-btn {
+  margin-top: 15px;
+  margin-bottom: 0;
+}
+
+@media (max-width: 480px) {
+  .row-controls {
+    position: static;
+    margin-bottom: 10px;
+    justify-content: flex-end;
+  }
+
+  .date-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .view-mode-toggle {
+    margin-left: 0;
+    width: 100%;
   }
 }
