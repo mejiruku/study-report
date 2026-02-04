@@ -5,8 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>StudyReport</title>
-    <meta name="data-app-version" content="1.4.2">
-    <link rel="stylesheet" href="./css/style.css?v=1.2.2">
+    <meta name="data-app-version" content="1.4.4">
+    <link rel="stylesheet" href="./css/style.css?v=1.2.4">
     <link rel="manifest" href="./js/manifest.json?v=1.1.0">
     <link rel="icon" type="image/x-icon" href="./assets/favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon-180x180.png">
@@ -20,6 +20,7 @@
                 <span id="save-status" class="save-status"></span>
             </div>
             <div id="auth-container" class="auth-container">
+                <button id="settings-btn" onclick="openSettings()" class="settings-btn" title="設定">⚙️</button>
                 <img id="user-icon" src="" alt="" style="width: 28px; height: 28px; border-radius: 50%; display: none; object-fit: cover;">
                 <span id="user-display" style="font-size: 0.9em; display: none;"></span>
                 <button id="login-btn" onclick="login()" class="auth-btn login">Googleでログイン</button>
@@ -101,6 +102,28 @@
         </div>
     </div>
 
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="popup-overlay">
+        <div class="popup-content settings-modal-content">
+            <h3 style="margin-top: 0; color: #006680;">⚙ 設定</h3>
+            <div class="settings-section">
+                <div class="special-code-group">
+                    <div style="margin-bottom: 12px; display: flex; align-items: center;">
+                        <input type="checkbox" id="special-code-toggle" style="margin-right: 8px; transform: scale(1.2); cursor: pointer;">
+                        <label for="special-code-toggle" style="font-weight: bold; cursor: pointer;">特殊コード機能を有効にする</label>
+                    </div>
+                    <label for="special-code-input" style="font-weight: bold; display: block; margin-bottom: 8px;">特殊コード (HTML)</label>
+                    <textarea id="special-code-input" class="special-code-textarea" placeholder="ここにHTMLコードを入力してください..."></textarea>
+                    <p style="font-size: 0.85em; color: #666; margin-top: 5px; margin-bottom: 0;">※コピー後にこのHTMLを含む新しいタブが開きます</p>
+                </div>
+            </div>
+            <div class="confirm-buttons">
+                <button onclick="closeSettings()" class="popup-btn cancel">キャンセル</button>
+                <button onclick="saveSettings()" class="popup-btn">保存</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
@@ -110,7 +133,7 @@
     <script src="./js/firebase-init.js?v=custom"></script>
 
     <!-- App Logic -->
-    <script src="./js/script.js?v=1.2.2" async></script>
+    <script src="./js/script.js?v=1.2.4" async></script>
 </body>
 
 </html>
