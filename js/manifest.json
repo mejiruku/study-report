@@ -6,7 +6,7 @@
     "background_color": "#ffffff",
     "theme_color": "#4CAF50",
     "icons": [{
-        "src": "./assets/logo.png",
+        "src": "https://mejiruku.github.io/study-report/assets/logo.png",
         "sizes": "180x180",
         "type": "image/png"
     }]
