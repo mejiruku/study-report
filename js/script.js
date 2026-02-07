@@ -308,7 +308,6 @@ function updateAuthUI(user) {
 }
 
 // ====== ログインモーダル関連 ======
-let loginConfirmed = false;
 
 function openLoginModal() {
   const modal = document.getElementById("login-modal");
@@ -327,7 +326,6 @@ function openLoginModal() {
 function closeLoginModal() {
   const modal = document.getElementById("login-modal");
   modal.classList.remove("show");
-  loginConfirmed = false;
 }
 
 function showEmailForm() {
@@ -350,14 +348,11 @@ async function login() {
     "ログインすると、現在ローカルに保存されているすべてのデータは削除され、クラウド上のデータに置き換わります。\n本当によろしいですか？",
   );
   if (confirmed) {
-    loginConfirmed = true;
     openLoginModal();
   }
 }
 
 function performGoogleLogin() {
-  if (!loginConfirmed) return;
-
   closeLoginModal();
   auth
     .signInWithPopup(provider)
@@ -371,8 +366,6 @@ function performGoogleLogin() {
 }
 
 function performEmailSignIn() {
-  if (!loginConfirmed) return;
-
   const email = document.getElementById("login-email").value.trim();
   const password = document.getElementById("login-password").value;
 
@@ -402,8 +395,6 @@ function performEmailSignIn() {
 }
 
 function performEmailSignUp() {
-  if (!loginConfirmed) return;
-
   const email = document.getElementById("login-email").value.trim();
   const password = document.getElementById("login-password").value;
 
