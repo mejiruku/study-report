@@ -429,30 +429,9 @@ function performEmailSignUp() {
     });
 }
 
-// イベントリスナーをDOMContentLoadedで設定
-document.addEventListener("DOMContentLoaded", function () {
-  const googleLoginBtn = document.getElementById("google-login-btn");
-  const emailLoginBtn = document.getElementById("email-login-btn");
-  const emailSigninBtn = document.getElementById("email-signin-btn");
-  const emailSignupBtn = document.getElementById("email-signup-btn");
-  const backToMethodsBtn = document.getElementById("back-to-methods-btn");
 
-  if (googleLoginBtn) {
-    googleLoginBtn.addEventListener("click", performGoogleLogin);
-  }
-  if (emailLoginBtn) {
-    emailLoginBtn.addEventListener("click", showEmailForm);
-  }
-  if (emailSigninBtn) {
-    emailSigninBtn.addEventListener("click", performEmailSignIn);
-  }
-  if (emailSignupBtn) {
-    emailSignupBtn.addEventListener("click", performEmailSignUp);
-  }
-  if (backToMethodsBtn) {
-    backToMethodsBtn.addEventListener("click", showMethodSelect);
-  }
-});
+// Note: Login modal event listeners are now set via onclick attributes in HTML
+// for better mobile compatibility with async script loading
 
 async function logout() {
   const confirmed = await showConfirm("ログアウトしますか？");

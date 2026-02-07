@@ -130,11 +130,11 @@
         <div class="popup-content login-modal-content">
             <h3 style="margin-top: 0; color: #006680;">ログイン</h3>
             <div id="login-method-select" class="login-method-section">
-                <button id="google-login-btn" class="login-method-btn google">
+                <button id="google-login-btn" class="login-method-btn google" onclick="performGoogleLogin()">
                     <span class="login-icon">G</span>
                     Googleでログイン
                 </button>
-                <button id="email-login-btn" class="login-method-btn email">
+                <button id="email-login-btn" class="login-method-btn email" onclick="showEmailForm()">
                     <span class="login-icon">✉</span>
                     メール / パスワード
                 </button>
@@ -149,10 +149,10 @@
                     <input type="password" id="login-password" placeholder="パスワード">
                 </div>
                 <div class="email-login-buttons">
-                    <button id="email-signin-btn" class="popup-btn">ログイン</button>
-                    <button id="email-signup-btn" class="popup-btn signup">新規登録</button>
+                    <button id="email-signin-btn" class="popup-btn" onclick="performEmailSignIn()">ログイン</button>
+                    <button id="email-signup-btn" class="popup-btn signup" onclick="performEmailSignUp()">新規登録</button>
                 </div>
-                <button id="back-to-methods-btn" class="back-link">← 戻る</button>
+                <button id="back-to-methods-btn" class="back-link" onclick="showMethodSelect()">← 戻る</button>
             </div>
             <button onclick="closeLoginModal()" class="popup-btn cancel" style="margin-top: 15px; width: 100%;">キャンセル</button>
         </div>
