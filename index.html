@@ -1,333 +1,195 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-    />
-    <title>SmartSRS</title>
-    <meta name="data-app-version" content="1.0.4" />
-    <link rel="icon" href="img/logo.png" />
-    <link rel="apple-touch-icon" href="img/logo.png" />
-    <link rel="manifest" href="manifest.json?v=1.0.0" />
-    <link rel="stylesheet" href="css/style.css?v=1.0.4" />
-  </head>
-  <body>
-    <div id="loading" class="loading-overlay"><div class="spinner"></div></div>
 
-    <div id="auth-view">
-      <div class="auth-box">
-        <h1>Smart SRS</h1>
-        <p>学習データをクラウドに保存します。<br />ログインしてください。</p>
-        <div id="auth-error" class="error-msg"></div>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>StudyReport</title>
+    <meta name="data-app-version" content="1.6.3">
+    <link rel="stylesheet" href="./css/style.css?v=1.6.3">
+    <link rel="manifest" href="./manifest.json?v=1.1.1">
+    <link rel="icon" type="image/x-icon" href="./assets/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon-180x180.png">
+</head>
 
-        <div class="input-group">
-          <input
-            type="email"
-            id="email"
-            placeholder="メールアドレス"
-            required
-            onkeydown="checkLoginEnter(event)"
-          />
-        </div>
-        <div class="input-group">
-          <input
-            type="password"
-            id="password"
-            placeholder="パスワード"
-            required
-            onkeydown="checkLoginEnter(event)"
-          />
-        </div>
+<body>
+    <div id="auth-guard-screen" class="auth-guard">
+        <div class="container auth-box">
+            <h2 class="auth-title">StudyReport</h2>
+            <p class="auth-subtitle">勉強報告メール作成</p>
 
-        <button id="btnLogin" class="primary-btn">ログイン</button>
-        <button id="btnSignup" class="secondary-btn">新規登録</button>
-        <button onclick="resetPassword()" class="text-link">
-          パスワードを忘れた方
-        </button>
-      </div>
-    </div>
+            <h3 id="auth-modal-title" class="auth-section-title">ログイン</h3>
 
-    <div class="container" id="deck-list-view">
-      <header>
-        <h1>📚 My Decks</h1>
-        <div class="header-actions">
-          <button class="icon-btn" onclick="openStats()">📊</button>
-          <button class="icon-btn" onclick="openSettings()">⚙️</button>
-          <button class="icon-btn" onclick="showAddDeckModal()">➕</button>
-        </div>
-      </header>
-      <div id="next-study-info" class="next-study-info">
-        <span class="next-study-icon">📅</span>
-        <div>
-          <div class="next-study-label">次の学習</div>
-          <div id="next-study-text" class="next-study-value">---</div>
-        </div>
-      </div>
-      <div id="deck-grid" class="deck-grid"></div>
-    </div>
-
-    <div class="container" id="settings-view">
-      <header>
-        <button class="icon-btn" onclick="backToDecks()">←</button>
-        <h1>設定</h1>
-        <div class="spacer-40"></div>
-      </header>
-
-      <div class="settings-section">
-        <h3>アカウント</h3>
-        <p id="user-email-display" class="user-email-display"></p>
-        <button class="btn-block btn-logout" onclick="handleLogout()">
-          ログアウト
-        </button>
-      </div>
-
-      <div class="settings-section">
-        <h3>データ管理</h3>
-        <button class="btn-block btn-data" onclick="exportAllData()">
-          📤 JSONバックアップ保存
-        </button>
-        <button
-          class="btn-block btn-data"
-          onclick="document.getElementById('restoreInput').click()"
-        >
-          📥 JSON復元 (読込)
-        </button>
-        <input
-          type="file"
-          id="restoreInput"
-          accept=".json"
-          style="display: none"
-          onchange="restoreData(this)"
-        />
-      </div>
-
-      <div class="settings-section">
-        <h3>デッキ管理</h3>
-        <ul class="settings-deck-list" id="settings-deck-list"></ul>
-      </div>
-
-      <div
-        style="
-          margin-top: 20px;
-          text-align: center;
-          color: var(--text-sub);
-          font-size: 0.8rem;
-        "
-      >
-        Version: <span id="app-version"></span>
-      </div>
-    </div>
-    <div class="container" id="stats-view">
-      <header>
-        <button class="icon-btn" onclick="backToDecks()">←</button>
-        <h1>学習記録</h1>
-        <div class="spacer-40"></div>
-      </header>
-        <div class="settings-section">
-        <h3>今日の進捗</h3>
-        <div id="today-stats" class="next-study-info">
-        </div>
-      </div>
-      <div class="settings-section">
-        <h3>過去の記録</h3>
-        <ul class="settings-deck-list" id="stats-log-list">
-        </ul>
-      </div>
-    </div>
-
-    <div class="container" id="study-view">
-      <header class="flex-stretch">
-        <div class="study-header-actions">
-          <button class="icon-btn" onclick="backToDecks()">←</button>
-          <h1 id="study-title" class="study-title">Deck Title</h1>
-          <div class="header-actions">
-            <button
-              id="btnUndo"
-              class="icon-btn"
-              onclick="handleUndo()"
-              disabled
-              title="1つ戻る"
-            >
-              ↩️
+            <button class="auth-btn-google" onclick="performGoogleLoginGuard()">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+                Googleでログイン
             </button>
-            <button class="icon-btn" onclick="openManager()">📝</button>
-          </div>
-        </div>
-        <div class="progress-container">
-          <div class="progress-bar" id="study-progress"></div>
-        </div>
-      </header>
 
-      <div class="scene" id="card-scene">
-        <div class="card" id="card-obj">
-          <div class="card__face card__face--front">
-            <div class="card-header">
-              <div class="card-number" id="q-num"></div>
-            </div>
-            <div class="card-body">
-              <div class="q-label">QUESTION</div>
-              <div class="q-text" id="q-text"></div>
-            </div>
-            <div class="card-footer">Tap to Flip</div>
-          </div>
-          <div class="card__face card__face--back">
-            <div class="card-header">
-              <div class="card-number" id="a-num"></div>
-            </div>
-            <div class="card-body">
-              <div class="a-label">ANSWER</div>
-              <div class="a-text" id="a-text"></div>
-              <div class="exp-text" id="exp-text"></div>
-            </div>
-            <div class="card-footer"></div>
-          </div>
-        </div>
-      </div>
+            <div class="separator">または Emailで</div>
 
-      <div class="empty-state hidden" id="empty-state">
-        <h2 class="empty-state-title">🎉 コンプリート！</h2>
-        <p class="empty-state-text">
-          今のところ、学習すべきカードはありません。
-        </p>
-        <button class="primary-btn btn-cram mt-20" onclick="startCramMode()">
-          残りも学習する (先取り)
-        </button>
-        <button class="secondary-btn" onclick="backToDecks()">
-          デッキ一覧に戻る
-        </button>
-      </div>
+            <div class="form-group">
+                <input type="email" id="auth-email" placeholder="メールアドレス" class="auth-input">
+            </div>
+            <div class="form-group">
+                <input type="password" id="auth-password" placeholder="パスワード" class="auth-input">
+            </div>
 
-      <div class="controls-container">
-        <div class="controls" id="controls">
-          <button class="rate-btn btn-again" onclick="rateCard(1)">
-            Again <span id="lbl-again">1m</span>
-          </button>
-          <button class="rate-btn btn-hard" onclick="rateCard(2)">
-            Hard <span id="lbl-hard">2d</span>
-          </button>
-          <button class="rate-btn btn-good" onclick="rateCard(3)">
-            Good <span id="lbl-good">4d</span>
-          </button>
-          <button class="rate-btn btn-easy" onclick="rateCard(4)">
-            Easy <span id="lbl-easy">7d</span>
-          </button>
+            <button id="auth-action-btn" class="popup-btn auth-submit-btn" onclick="performEmailSignInGuard()">ログイン</button>
+
+            <div class="auth-links">
+                <p class="switch-auth-link">
+                    アカウントをお持ちでないですか？ <a onclick="toggleAuthMode('signup')">新規登録</a>
+                </p>
+                <p class="switch-auth-link">
+                    <a onclick="resetPasswordGuard()">パスワードを忘れた場合</a>
+                </p>
+            </div>
         </div>
-      </div>
     </div>
 
-    <div class="container" id="manager-view">
-      <header>
-        <button class="icon-btn" onclick="closeManager()">←</button>
-        <h1>カード編集</h1>
-        <div class="gap-5">
-          <button
-            class="icon-btn btn-delete-card"
-            onclick="deleteSelectedCards()"
-            id="btn-bulk-delete"
-          >
-            🗑️
-          </button>
-          <button class="icon-btn" onclick="showDeckMenu()">📥</button>
-        </div>
-      </header>
-      <div class="input-group">
-        <input
-          type="text"
-          id="search-input"
-          placeholder="検索..."
-          oninput="renderManagerList()"
-        />
-      </div>
-      <ul class="manager-list" id="manager-list"></ul>
-      <div class="btn-add-float" onclick="openEditModal(null)">+</div>
-    </div>
-
-    <div id="modal-deck" class="modal">
-      <div class="modal-content">
-        <h3>新規デッキ作成</h3>
-        <div class="input-group">
-          <label>デッキ名</label><input type="text" id="new-deck-name" />
-        </div>
-        <button class="primary-btn" onclick="createDeck()">作成</button>
-        <button class="secondary-btn" onclick="closeModals()">
-          キャンセル
-        </button>
-      </div>
-    </div>
-
-    <div id="modal-card" class="modal">
-      <div class="modal-content">
-        <h3 id="modal-card-title">カード編集</h3>
-        <div class="input-group">
-          <label>番号 (No.)</label
-          ><input type="text" id="edit-display-id" placeholder="例: 1, 10-A" />
-        </div>
-        <div class="input-group">
-          <label>問題 (Question)</label
-          ><textarea id="edit-q" rows="3"></textarea>
-        </div>
-        <div class="input-group">
-          <label>答え (Answer)</label><textarea id="edit-a" rows="2"></textarea>
-        </div>
-        <div class="input-group">
-          <label>解説 (Explanation)</label
-          ><textarea id="edit-e" rows="3"></textarea>
-        </div>
-        <button class="primary-btn" onclick="saveCardEdit()">保存</button>
-        <button
-          class="secondary-btn btn-edit-delete"
-          onclick="deleteCard()"
-          id="btn-delete"
-        >
-          削除
-        </button>
-        <button class="secondary-btn" onclick="closeModals()">
-          キャンセル
-        </button>
-      </div>
-    </div>
-
-    <div id="modal-deck-menu" class="modal">
-      <div class="modal-content">
-        <h3>デッキメニュー</h3>
-        
-        <div class="menu-section">
-            <h4>📤 エクスポート (書き出し)</h4>
-            <p class="desc-text">形式を選択してダウンロード</p>
-            <div class="export-buttons">
-                <div class="btn-group-label">データのみ:</div>
-                <button class="small-btn" onclick="exportDeckData('tsv', false)">TSV (Excel推奨)</button>
-                <button class="small-btn" onclick="exportDeckData('csv', false)">CSV</button>
+    <div id="app-container" class="container" style="display: none;">
+        <div class="header-container">
+            <div class="header-title-box">
+                <h2>勉強報告メール</h2>
+                <span id="save-status" class="save-status"></span>
             </div>
-            <div class="export-buttons mt-5">
-                <div class="btn-group-label">進捗を含む:</div>
-                <button class="small-btn" onclick="exportDeckData('tsv', true)">TSV (バックアップ用)</button>
-                <button class="small-btn" onclick="exportDeckData('csv', true)">CSV</button>
+            <div id="auth-container" class="auth-container">
+                <button id="settings-btn" onclick="openSettings()" class="settings-btn" title="設定">⚙️</button>
+                <img id="user-icon" src="" alt="" style="width: 28px; height: 28px; border-radius: 50%; display: none; object-fit: cover;">
+                <span id="user-display" style="font-size: 0.9em; display: none;"></span>
+                <button id="login-btn" onclick="login()" class="auth-btn login" style="display: none;">ログイン</button>
+                <button id="logout-btn" onclick="logout()" class="auth-btn logout" style="display: none;">ログアウト</button>
             </div>
         </div>
 
-        <hr class="separator">
-
-        <div class="menu-section">
-            <h4>📥 インポート (追加)</h4>
-            <p class="desc-text">ファイルを選択 または テキストを貼り付け<br>
-            <small>※ TSV/CSV対応。Excelから直接貼り付け可。</small></p>
-            
-            <input type="file" id="fileInput" accept=".csv,.tsv,.txt" class="mb-10" />
-            
-            <textarea id="import-text-area" rows="4" placeholder="ここにExcelやテキストエディタからデータを貼り付け..."></textarea>
-            
-            <button class="primary-btn import-btn" onclick="executeImport()">
-              インポート実行
-            </button>
+        <div class="date-section">
+            <label for="report-date">日付: </label>
+            <input type="date" id="report-date">
         </div>
 
-        <button class="secondary-btn mt-20" onclick="closeModals()">閉じる</button>
-      </div>
+        <div id="subjects-container"></div>
+        <div class="controls">
+            <button class="add-btn" onclick="addSubject()">＋ 教科を追加する</button>
+            <button class="reset-btn" onclick="resetData()">この日の入力をクリア</button>
+        </div>
+
+        <div class="global-comment-section">
+            <label style="font-size: 1.1em; color: #006680;">全体の感想・コメント</label>
+            <textarea id="global-comment-text" placeholder="コメント" oninput="generateText()"></textarea>
+        </div>
+        <div class="result-area">
+            <h3>メール本文</h3>
+            <div class="total-display" id="screen-total">合計: 0時間 0分</div>
+            <button class="copy-btn" onclick="copyToClipboard()">コピーする</button>
+            <textarea id="output-text" readonly></textarea>
+        </div>
+        <div class="backup-controls">
+            <button onclick="exportData()" class="export-btn">データ書き出し (保存)</button>
+            <button onclick="document.getElementById('import-file').click()" class="import-btn">データ読み込み (復元)</button>
+            <input type="file" id="import-file" style="display:none" onchange="importData(this)" accept=".rep">
+            <button onclick="showSyncLog()" class="log-btn">操作ログ</button>
+        </div>
     </div>
 
-    <script type="module" src="js/script.js?v=1.0.4"></script>
-  </body>
+    <div id="popup-modal" class="popup-overlay">
+        <div class="popup-content">
+            <p id="popup-message"></p>
+            <button id="popup-close-btn" class="popup-btn">OK</button>
+        </div>
+    </div>
+
+    <div id="confirm-modal" class="popup-overlay">
+        <div class="popup-content">
+            <p id="confirm-message"></p>
+            <div class="confirm-buttons">
+                <button id="confirm-cancel-btn" class="popup-btn cancel">キャンセル</button>
+                <button id="confirm-ok-btn" class="popup-btn">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="sync-log-modal" class="popup-overlay">
+        <div class="popup-content log-modal-content">
+            <h3 style="margin-top: 0; color: #006680;">操作ログ</h3>
+            <div id="sync-log-list" class="sync-log-list"></div>
+            <div class="confirm-buttons">
+                <button id="sync-log-clear-btn" onclick="clearSyncLog()" class="popup-btn cancel">ログを全削除</button>
+                <button id="sync-log-close-btn" onclick="closeSyncLogModal()" class="popup-btn">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="export-modal" class="popup-overlay">
+        <div class="popup-content">
+            <p>書き出しオプションを選択してください</p>
+            <div class="confirm-buttons" style="flex-direction: column; gap: 10px;">
+                <button id="export-with-logs-btn" class="popup-btn" style="width: 100%;">ログを含めて書き出し</button>
+                <button id="export-no-logs-btn" class="popup-btn" style="width: 100%; background-color: #4CAF50;">データのみ書き出し</button>
+                <button id="export-cancel-btn" class="popup-btn cancel" style="width: 100%;">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="popup-overlay">
+        <div class="popup-content settings-modal-content">
+            <h3 style="margin-top: 0; color: #006680;">⚙ 設定</h3>
+            <div class="settings-section">
+                <div class="special-code-group">
+                    <div style="margin-bottom: 12px; display: flex; align-items: center;">
+                        <input type="checkbox" id="special-code-toggle" style="margin-right: 8px; transform: scale(1.2); cursor: pointer;">
+                        <label for="special-code-toggle" style="font-weight: bold; cursor: pointer;">特殊コード機能を有効にする</label>
+                    </div>
+                    <label for="special-code-input" style="font-weight: bold; display: block; margin-bottom: 8px;">特殊コード (HTML)</label>
+                    <textarea id="special-code-input" class="special-code-textarea" placeholder="ここにHTMLコードを入力してください..."></textarea>
+                    <p style="font-size: 0.85em; color: #666; margin-top: 5px; margin-bottom: 0;">※コピー後にこのHTMLを含む新しいタブが開きます</p>
+                </div>
+                <p id="app-version-display" style="text-align: center; font-size: 0.8em; color: #999; margin-top: 15px; margin-bottom: 5px;"></p>
+            </div>
+            <div class="confirm-buttons">
+                <button onclick="closeSettings()" class="popup-btn cancel">キャンセル</button>
+                <button onclick="saveSettings()" class="popup-btn">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="login-modal" class="popup-overlay">
+        <div class="popup-content login-modal-content">
+            <h3 style="margin-top: 0; color: #006680;">ログイン</h3>
+            <div id="login-method-select" class="login-method-section">
+                <button id="google-login-btn" class="login-method-btn google" onclick="performGoogleLogin()">
+                    <span class="login-icon">G</span>
+                    Googleでログイン
+                </button>
+                <button id="email-login-btn" class="login-method-btn email" onclick="showEmailForm()">
+                    <span class="login-icon">✉</span>
+                    メール / パスワード
+                </button>
+            </div>
+            <div id="email-login-form" class="email-login-form" style="display: none;">
+                <div class="form-group">
+                    <label for="login-email">メールアドレス</label>
+                    <input type="email" id="login-email" placeholder="example@mail.com">
+                </div>
+                <div class="form-group">
+                    <label for="login-password">パスワード</label>
+                    <input type="password" id="login-password" placeholder="パスワード">
+                </div>
+                <div class="email-login-buttons">
+                    <button id="email-signin-btn" class="popup-btn" onclick="performEmailSignIn()">ログイン</button>
+                    <button id="email-signup-btn" class="popup-btn signup" onclick="performEmailSignUp()">新規登録</button>
+                </div>
+                <button id="back-to-methods-btn" class="back-link" onclick="showMethodSelect()">← 戻る</button>
+            </div>
+            <button onclick="closeLoginModal()" class="popup-btn cancel" style="margin-top: 15px; width: 100%;">キャンセル</button>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <script src="./js/firebase-init.js?v=custom"></script>
+    <script src="./js/script.js?v=1.6.3"></script>
+</body>
+
 </html>

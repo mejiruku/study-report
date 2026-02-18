@@ -6,7 +6,7 @@ const urlsToCache = [
     './css/style.css',     // CSSファイル
     './js/script.js',     // JSファイル
     './js/firebase-init.js',
-    './img/logo.png', // 画像
+    './assets/logo.png', // 画像
     'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg'
 ];
 

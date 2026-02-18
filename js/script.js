@@ -1,947 +1,1430 @@
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { auth, db } from "./firebase-init.js";
-
-let appData = { decks: [] };
-let currentUser = null;
-let currentDeckId = null;
-let studyQueue = [];
-let currentCard = null;
-let editingCardId = null;
-let isCramMode = false;
-let sessionReviewedIds = new Set();
-let historyStack = [];
-
-// --- 学習記録用の変数 ---
-let sessionStartTime = null; 
-let sessionCardsCount = 0;   
-
-const STORAGE_KEY = 'smart_srs_v3'; 
-
-onAuthStateChanged(auth, async (user) => {
-    const authView = document.getElementById('auth-view');
-    if (user) {
-        currentUser = user;
-        document.getElementById('user-email-display').innerText = user.email;
-        authView.style.display = 'none';
-        showLoading(true);
-        await loadDataFromCloud();
-        showLoading(false);
-        switchView('deck-list-view');
-        renderDeckList();
-    } else {
-        currentUser = null;
-        document.querySelectorAll('.container').forEach(el => el.style.display = 'none');
-        authView.style.display = 'flex';
-    }
-});
-
-// --- Login Bypass (Test Mode) ---
-let loginPressTimer;
-const btnLogin = document.getElementById('btnLogin');
-
-function startBypassTimer() {
-    loginPressTimer = setTimeout(async () => {
-        console.log("Bypassing login...");
-        currentUser = { uid: 'test_user_' + Date.now(), isAnonymous: true, email: 'test@test.com' };
-        alert("テストモードでログインしました (Bypass)");
-        document.getElementById('user-email-display').innerText = 'Test User';
-        document.getElementById('auth-view').style.display = 'none';
-        initDefaultData();
-        switchView('deck-list-view');
-        renderDeckList();
-    }, 5000);
+// --- サービスワーカーの登録 ---
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("./sw.js")
+      .then((reg) => console.log("Service Worker Registered!", reg))
+      .catch((err) => console.log("Service Worker Registration Failed", err));
+  });
 }
 
-function cancelBypassTimer() {
-    clearTimeout(loginPressTimer);
+// --- カスタムポップアップ関数 ---
+function showPopup(message) {
+  const modal = document.getElementById("popup-modal");
+  const messageEl = document.getElementById("popup-message");
+  const closeBtn = document.getElementById("popup-close-btn");
+
+  if (!modal || !messageEl || !closeBtn) {
+    alert(message);
+    return;
+  }
+
+  messageEl.innerText = message;
+  modal.classList.add("show");
+
+  const closePopup = () => {
+    modal.classList.remove("show");
+    closeBtn.removeEventListener("click", closePopup);
+    modal.removeEventListener("click", handleBackdropClick);
+  };
+
+  const handleBackdropClick = (e) => {
+    if (e.target === modal) {
+      closePopup();
+    }
+  };
+
+  closeBtn.addEventListener("click", closePopup);
+  modal.addEventListener("click", handleBackdropClick);
 }
 
-btnLogin.addEventListener('mousedown', startBypassTimer);
-btnLogin.addEventListener('touchstart', startBypassTimer);
-btnLogin.addEventListener('mouseup', cancelBypassTimer);
-btnLogin.addEventListener('mouseleave', cancelBypassTimer);
-btnLogin.addEventListener('touchend', cancelBypassTimer);
+// --- カスタム確認ダイアログ関数 ---
+function showConfirm(message) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("confirm-modal");
+    const messageEl = document.getElementById("confirm-message");
+    const okBtn = document.getElementById("confirm-ok-btn");
+    const cancelBtn = document.getElementById("confirm-cancel-btn");
 
-btnLogin.addEventListener('click', async () => {
-    if (!currentUser) await tryLogin(); 
-});
-
-async function tryLogin() {
-    const email = document.getElementById('email').value;
-    const pass = document.getElementById('password').value;
-    const err = document.getElementById('auth-error');
-    err.style.display = 'none';
-    try { await signInWithEmailAndPassword(auth, email, pass); } catch (e) {
-        err.innerText = "ログイン失敗: " + e.message;
-        err.style.display = 'block';
-    }
-}
-
-window.checkLoginEnter = (e) => {
-    if(e.key === 'Enter') tryLogin();
-};
-
-document.getElementById('btnSignup').addEventListener('click', async () => {
-    const email = document.getElementById('email').value;
-    const pass = document.getElementById('password').value;
-    const err = document.getElementById('auth-error');
-    err.style.display = 'none';
-    try { await createUserWithEmailAndPassword(auth, email, pass); alert("登録完了！"); } catch (e) {
-        err.innerText = "登録失敗: " + e.message;
-        err.style.display = 'block';
-    }
-});
-
-window.handleLogout = () => signOut(auth);
-
-window.resetPassword = async () => {
-    const email = document.getElementById('email').value;
-    if (!email) { alert('メールアドレスを入力してください'); return; }
-    try {
-        await sendPasswordResetEmail(auth, email);
-        alert('パスワード再設定メールを送信しました');
-    } catch (e) {
-        alert('送信失敗: ' + e.message);
-    }
-};
-
-async function loadDataFromCloud() {
-    if (!currentUser) return;
-    const decksCol = collection(db, "users", currentUser.uid, "decks");
-    try {
-        const snp = await getDocs(decksCol);
-        if (!snp.empty) {
-            appData.decks = snp.docs.map(d => d.data());
-            appData.decks.sort((a, b) => (a.order || 0) - (b.order || 0));
-            let changed = false;
-            appData.decks.forEach((d, i) => {
-                if (d.order === undefined) { d.order = i; changed = true; }
-            });
-            if (changed) { appData.decks.forEach(d => saveDeckToCloud(d)); }
-        } else {
-            const userDocRef = doc(db, "users", currentUser.uid);
-            const docSnap = await getDoc(userDocRef);
-            if (docSnap.exists() && docSnap.data().appData) {
-                appData = docSnap.data().appData;
-                appData.decks.forEach((d, i) => d.order = i);
-                for (const deck of appData.decks) {
-                    await saveDeckToCloud(deck);
-                }
-            } else {
-                 initDefaultData();
-            }
-        }
-    } catch (error) { console.error(error); alert("読込失敗"); }
-}
-
-async function saveDeckToCloud(deck) {
-    if (!currentUser || !deck) return;
-    try {
-        await setDoc(doc(db, "users", currentUser.uid, "decks", deck.id), deck);
-    } catch (e) { console.error(e); }
-}
-
-async function deleteDeckFromCloud(deckId) {
-    if (!currentUser) return;
-    try {
-        await deleteDoc(doc(db, "users", currentUser.uid, "decks", deckId));
-    } catch (e) { console.error(e); }
-}
-
-function initDefaultData() {
-    appData = { decks: [] };
-}
-
-window.openSettings = () => { 
-    switchView('settings-view'); 
-    renderSettingsDeckList(); 
-    const meta = document.querySelector('meta[name="data-app-version"]');
-    if (meta) {
-        document.getElementById('app-version').innerText = meta.content;
-    }
-};
-
-// --- 学習終了時に記録を保存するように変更 ---
-window.backToDecks = async () => { 
-    if (sessionStartTime && sessionCardsCount > 0) {
-        const duration = Math.floor((Date.now() - sessionStartTime) / 1000); 
-        await saveStudyLog(sessionCardsCount, duration);
-    }
-    sessionStartTime = null;
-    sessionCardsCount = 0;
-    switchView('deck-list-view'); 
-    renderDeckList(); 
-    sessionReviewedIds.clear(); 
-    historyStack = []; 
-};
-
-window.showAddDeckModal = () => document.getElementById('modal-deck').classList.add('active');
-window.closeModals = () => document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
-
-window.createDeck = () => {
-    const name = document.getElementById('new-deck-name').value;
-    if(name) {
-        const maxOrder = appData.decks.length > 0 ? Math.max(...appData.decks.map(d => d.order || 0)) : 0;
-        const newDeck = { id:'d_'+Date.now(), name, cards:[], order: maxOrder + 1 };
-        appData.decks.push(newDeck);
-        saveDeckToCloud(newDeck); renderDeckList(); window.closeModals();
-        document.getElementById('new-deck-name').value = '';
-    }
-};
-
-// --- 学習開始時にセッション計測を開始 ---
-window.openStudy = (id) => {
-    currentDeckId = id; isCramMode = false; sessionReviewedIds.clear(); historyStack = [];
-    sessionStartTime = Date.now(); 
-    sessionCardsCount = 0;         
-    const deck = appData.decks.find(d => d.id === id);
-    if(!deck) return;
-    document.getElementById('study-title').innerText = deck.name;
-    window.sessionTotal = deck.cards.filter(c => c.dueDate <= Date.now()).length; 
-    if(window.sessionTotal === 0 && deck.cards.length > 0) window.sessionTotal = deck.cards.length; 
-    switchView('study-view'); refreshQueue();
-};
-
-window.openManager = () => { switchView('manager-view'); renderManagerList(); };
-window.closeManager = () => { switchView('study-view'); refreshQueue(); };
-
-// --- Deck Menu (Export/Import) ---
-window.showDeckMenu = () => {
-    document.getElementById('modal-deck-menu').classList.add('active');
-    // リセット
-    document.getElementById('import-text-area').value = '';
-    document.getElementById('fileInput').value = '';
-};
-
-window.startCramMode = () => { 
-    isCramMode = true; sessionReviewedIds.clear(); historyStack = []; 
-    const deck = appData.decks.find(d => d.id === currentDeckId);
-    window.sessionTotal = deck.cards.length;
-    refreshQueue(); 
-};
-
-// --- カード回答時にカウントアップ ---
-window.rateCard = (rating) => {
-    if (!currentCard) return;
-    sessionCardsCount++; 
-    document.querySelectorAll('.rate-btn').forEach(btn => btn.disabled = true);
-    
-    const cardStateCopy = JSON.parse(JSON.stringify(currentCard));
-    historyStack.push({ card: cardStateCopy, isCramMode: isCramMode });
-    updateUndoButton();
-    sessionReviewedIds.add(currentCard.id);
-    const deck = appData.decks.find(d => d.id === currentDeckId);
-    const idx = deck.cards.findIndex(c => c.id === currentCard.id);
-    const next = calculateNextState(currentCard, rating);
-    deck.cards[idx] = { ...currentCard, ...next };
-    saveDeckToCloud(deck); refreshQueue();
-};
-
-window.handleUndo = () => {
-    if (historyStack.length === 0) return;
-    const prevState = historyStack.pop();
-    const prevCard = prevState.card;
-    const deck = appData.decks.find(d => d.id === currentDeckId);
-    const idx = deck.cards.findIndex(c => c.id === prevCard.id);
-    if (idx !== -1) deck.cards[idx] = prevCard;
-    if (prevState.isCramMode) sessionReviewedIds.delete(prevCard.id);
-    if (sessionCardsCount > 0) sessionCardsCount--; 
-    saveDeckToCloud(deck); refreshQueue(); updateUndoButton();
-};
-
-function updateUndoButton() {
-    const btn = document.getElementById('btnUndo');
-    btn.disabled = (historyStack.length === 0);
-    btn.style.opacity = (historyStack.length === 0) ? '0.3' : '1';
-}
-
-window.renderManagerList = renderManagerList;
-
-window.openEditModal = (cardId) => {
-    editingCardId = cardId;
-    const deck = appData.decks.find(d => d.id === currentDeckId); 
-    if (!deck) return;
-    
-    if (cardId) {
-        const card = deck.cards.find(c => c.id === cardId);
-        document.getElementById('modal-card-title').innerText = "カード編集";
-        document.getElementById('edit-display-id').value = card.displayId || "";
-        document.getElementById('edit-q').value = card.question;
-        document.getElementById('edit-a').value = card.answer;
-        document.getElementById('edit-e').value = card.explanation;
-        document.getElementById('btn-delete').style.display = 'inline-block';
-    } else {
-        document.getElementById('modal-card-title').innerText = "新規カード追加";
-        document.getElementById('edit-display-id').value = "";
-        document.getElementById('edit-q').value = "";
-        document.getElementById('edit-a').value = "";
-        document.getElementById('edit-e').value = "";
-        document.getElementById('btn-delete').style.display = 'none';
-    }
-    document.getElementById('modal-card').classList.add('active');
-};
-
-window.saveCardEdit = () => {
-    const deck = appData.decks.find(d => d.id === currentDeckId);
-    const did = document.getElementById('edit-display-id').value;
-    const q = document.getElementById('edit-q').value;
-    const a = document.getElementById('edit-a').value;
-    const e = document.getElementById('edit-e').value;
-    if (!q || !a) return alert("問題と答えは必須です");
-    if (editingCardId) {
-        const idx = deck.cards.findIndex(c => c.id === editingCardId);
-        if (idx > -1) {
-            deck.cards[idx].displayId = did; deck.cards[idx].question = q; deck.cards[idx].answer = a; deck.cards[idx].explanation = e;
-        }
-    } else {
-        deck.cards.push({ id: 'c_' + Date.now(), displayId: did, question: q, answer: a, explanation: e, dueDate: 0, interval: 0, reps: 0, ef: 2.5 });
-    }
-    saveDeckToCloud(deck); window.closeModals(); renderManagerList();
-};
-
-window.deleteCard = () => {
-    if (!confirm("削除しますか？")) return;
-    const deck = appData.decks.find(d => d.id === currentDeckId);
-    deck.cards = deck.cards.filter(c => c.id !== editingCardId);
-    saveDeckToCloud(deck); window.closeModals(); renderManagerList();
-};
-
-// --- エクスポート機能 (CSV/TSV, 進捗あり/なし) ---
-window.exportDeckData = (format, withProgress) => {
-    const deck = appData.decks.find(d => d.id === currentDeckId);
-    if (!deck) return;
-
-    let content = "";
-    const delimiter = format === 'csv' ? ',' : '\t';
-    
-    // ヘッダー行
-    const headers = ["ID", "Question", "Answer", "Explanation"];
-    if (withProgress) {
-        headers.push("DueDate", "Interval", "Reps", "EF");
-    }
-    content += headers.map(h => escapeCell(h, delimiter)).join(delimiter) + "\n";
-
-    // データ行
-    deck.cards.forEach(c => {
-        const row = [
-            c.displayId || "",
-            c.question || "",
-            c.answer || "",
-            c.explanation || ""
-        ];
-        
-        if (withProgress) {
-            // 日付を ISO String にする (Excelでそのまま読める形式)
-            const dateStr = c.dueDate ? new Date(c.dueDate).toISOString() : "";
-            row.push(dateStr);
-            row.push(c.interval);
-            row.push(c.reps);
-            row.push(c.ef);
-        }
-
-        content += row.map(val => escapeCell(val, delimiter)).join(delimiter) + "\n";
-    });
-
-    // ファイルダウンロード
-    const bom = new Uint8Array([0xEF, 0xBB, 0xBF]); // BOM
-    const blob = new Blob([bom, content], { type: format === 'csv' ? "text/csv" : "text/tab-separated-values" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${deck.name}_${withProgress ? 'full' : 'cards'}.${format}`;
-    a.click();
-    URL.revokeObjectURL(url);
-};
-
-// セルのエスケープ処理
-function escapeCell(text, delimiter) {
-    if (text === null || text === undefined) text = "";
-    text = String(text);
-    // 改行、区切り文字、ダブルクォートがあれば全体を囲む
-    if (text.includes('\n') || text.includes('\r') || text.includes(delimiter) || text.includes('"')) {
-        return '"' + text.replace(/"/g, '""') + '"';
-    }
-    return text;
-}
-
-// --- インポート機能 (ファイル or テキスト貼り付け) ---
-window.executeImport = async () => {
-    const fileInput = document.getElementById('fileInput');
-    const textArea = document.getElementById('import-text-area');
-    
-    let content = "";
-
-    // ファイルが選択されていればファイルを優先
-    if (fileInput.files && fileInput.files[0]) {
-        const file = fileInput.files[0];
-        try {
-            content = await readFileAsync(file);
-        } catch(e) {
-            alert("ファイル読み込みエラー: " + e);
-            return;
-        }
-    } else {
-        // ファイルがなければテキストエリアを使用
-        content = textArea.value;
+    if (!modal || !messageEl || !okBtn || !cancelBtn) {
+      resolve(confirm(message));
+      return;
     }
 
-    if (!content.trim()) {
-        alert("インポートするデータがありません");
-        return;
-    }
+    messageEl.innerText = message;
+    modal.classList.add("show");
 
-    processImportContent(content);
-};
-
-function readFileAsync(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = e => resolve(e.target.result);
-        reader.onerror = e => reject(e);
-        reader.readAsText(file);
-    });
-}
-
-function processImportContent(content) {
-    const deck = appData.decks.find(d => d.id === currentDeckId);
-    if (!deck) return;
-
-    // 区切り文字の自動判定
-    const firstLineEnd = content.indexOf('\n');
-    const firstLine = firstLineEnd > -1 ? content.substring(0, firstLineEnd) : content;
-    const delimiter = firstLine.includes('\t') ? '\t' : ',';
-
-    try {
-        const rows = parseCSV(content, delimiter);
-        let addedCount = 0;
-        
-        rows.forEach((row, i) => {
-            if (row.length === 0 || (row.length === 1 && !row[0].trim())) return;
-            // ヘッダー行スキップ (簡易判定)
-            if (i === 0 && (row[0] === 'ID' || row[1] === 'Question')) return;
-
-            // 最低限 QとA
-            const did = row[0] || "";
-            const q = row[1] || "";
-            const a = row[2] || "";
-            const exp = row[3] || "";
-            
-            if (!q || !a) return; 
-
-            // 進捗データ読み込み
-            let dueDate = 0;
-            let interval = 0;
-            let reps = 0;
-            let ef = 2.5;
-
-            if (row.length >= 8) {
-                if (row[4]) dueDate = new Date(row[4]).getTime();
-                if (row[5]) interval = parseFloat(row[5]);
-                if (row[6]) reps = parseInt(row[6]);
-                if (row[7]) ef = parseFloat(row[7]);
-                
-                if (isNaN(dueDate)) dueDate = 0;
-                if (isNaN(interval)) interval = 0;
-                if (isNaN(reps)) reps = 0;
-                if (isNaN(ef)) ef = 2.5;
-            }
-
-            deck.cards.push({
-                id: 'imp_' + Date.now() + '_' + i,
-                displayId: did,
-                question: q,
-                answer: a,
-                explanation: exp,
-                dueDate: dueDate,
-                interval: interval,
-                reps: reps,
-                ef: ef
-            });
-            addedCount++;
-        });
-
-        saveDeckToCloud(deck);
-        window.closeModals();
-        renderManagerList();
-        alert(`${addedCount}件 インポートしました！`);
-        refreshQueue(); 
-
-    } catch (err) {
-        console.error(err);
-        alert("インポートエラー。フォーマットを確認してください。");
-    }
-}
-
-function parseCSV(text, delimiter) {
-    const rows = [];
-    let currentRow = [];
-    let currentCell = "";
-    let insideQuote = false;
-    
-    for (let i = 0; i < text.length; i++) {
-        const char = text[i];
-        const nextChar = text[i + 1];
-
-        if (insideQuote) {
-            if (char === '"') {
-                if (nextChar === '"') {
-                    currentCell += '"';
-                    i++; 
-                } else {
-                    insideQuote = false;
-                }
-            } else {
-                currentCell += char;
-            }
-        } else {
-            if (char === '"') {
-                insideQuote = true;
-            } else if (char === delimiter) {
-                currentRow.push(currentCell);
-                currentCell = "";
-            } else if (char === '\n' || char === '\r') {
-                if (char === '\r' && nextChar === '\n') {
-                    i++;
-                }
-                currentRow.push(currentCell);
-                rows.push(currentRow);
-                currentRow = [];
-                currentCell = "";
-            } else {
-                currentCell += char;
-            }
-        }
-    }
-    if (currentCell || currentRow.length > 0) {
-        currentRow.push(currentCell);
-        rows.push(currentRow);
-    }
-    return rows;
-}
-
-
-window.exportAllData = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData));
-    const a = document.createElement('a');
-    a.href = dataStr; a.download = "backup_" + new Date().toISOString().slice(0,10) + ".json";
-    a.click();
-};
-
-window.restoreData = (input) => {
-    const file = input.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        try {
-            const data = JSON.parse(e.target.result);
-            if (data.decks) {
-                if (confirm("上書き復元しますか？現在のデータは消去され、バックアップデータで上書きされます。")) {
-                    for(const d of appData.decks) { await deleteDeckFromCloud(d.id); }
-                    appData = data; 
-                    for(const d of appData.decks) { await saveDeckToCloud(d); }
-                    alert("復元完了"); renderSettingsDeckList(); 
-                }
-            }
-        } catch (err) { alert("読込失敗"); console.error(err); }
+    const cleanup = () => {
+      modal.classList.remove("show");
+      okBtn.removeEventListener("click", handleOk);
+      cancelBtn.removeEventListener("click", handleCancel);
+      modal.removeEventListener("click", handleBackdropClick);
     };
-    reader.readAsText(file); input.value = '';
-};
 
-window.renameDeck = (id) => {
-    const deck = appData.decks.find(d => d.id === id);
-    const name = prompt("新しい名前:", deck.name);
-    if(name && name!==deck.name) { deck.name=name; saveDeckToCloud(deck); renderSettingsDeckList(); }
-};
+    const handleOk = () => {
+      cleanup();
+      resolve(true);
+    };
+    const handleCancel = () => {
+      cleanup();
+      resolve(false);
+    };
+    const handleBackdropClick = (e) => {
+      if (e.target === modal) {
+        cleanup();
+        resolve(false);
+      }
+    };
 
-window.deleteDeck = (id) => {
-    if(confirm("削除しますか？")) { 
-        appData.decks = appData.decks.filter(d => d.id !== id); 
-        deleteDeckFromCloud(id); 
-        renderSettingsDeckList(); 
-    }
-};
-
-function switchView(viewId) {
-    ['deck-list-view', 'study-view', 'manager-view', 'settings-view', 'stats-view'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.style.display = (id === viewId) ? 'flex' : 'none';
-    });
-    if(viewId === 'study-view') updateUndoButton();
+    okBtn.addEventListener("click", handleOk);
+    cancelBtn.addEventListener("click", handleCancel);
+    modal.addEventListener("click", handleBackdropClick);
+  });
 }
 
-function renderDeckList() {
-    appData.decks.sort((a,b) => (a.order||0) - (b.order||0));
-    const grid = document.getElementById('deck-grid');
-    grid.innerHTML = '';
-    const now = Date.now();
-    appData.decks.forEach(deck => {
-        const dueCount = deck.cards.filter(c => c.dueDate <= now).length;
-        const el = document.createElement('div');
-        el.className = 'deck-card';
-        el.onclick = () => window.openStudy(deck.id);
-        el.innerHTML = `
-            <div class="deck-info">
-                <div class="deck-title">${deck.name}</div>
-                <div class="deck-stats">
-                    <span class="stat-badge ${dueCount > 0 ? 'due' : ''}">学習待ち: ${dueCount}</span>
-                    <span class="stat-badge">合計: ${deck.cards.length}</span>
-                </div>
-            </div>
-        `;
-        grid.appendChild(el);
-    });
+// --- 書き出しオプションダイアログ関数 ---
+function showExportConfirm() {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("export-modal");
+    const withLogsBtn = document.getElementById("export-with-logs-btn");
+    const noLogsBtn = document.getElementById("export-no-logs-btn");
+    const cancelBtn = document.getElementById("export-cancel-btn");
 
-    let earliestDue = Infinity;
-    let totalDue = 0;
-    appData.decks.forEach(deck => {
-        deck.cards.forEach(card => {
-            if (card.dueDate <= now) totalDue++;
-            else if (card.dueDate < earliestDue) earliestDue = card.dueDate;
-        });
-    });
+    if (!modal || !withLogsBtn || !noLogsBtn || !cancelBtn) {
+      resolve("cancel");
+      return;
+    }
 
-    const infoEl = document.getElementById('next-study-text');
-    if (totalDue > 0) {
-        infoEl.innerText = totalDue + '件のカードが学習待ちです';
-    } else if (earliestDue === Infinity) {
-        infoEl.innerText = 'カードがありません';
+    modal.classList.add("show");
+
+    const cleanup = () => {
+      modal.classList.remove("show");
+      withLogsBtn.removeEventListener("click", handleWithLogs);
+      noLogsBtn.removeEventListener("click", handleNoLogs);
+      cancelBtn.removeEventListener("click", handleCancel);
+      modal.removeEventListener("click", handleBackdropClick);
+    };
+
+    const handleWithLogs = () => {
+      cleanup();
+      resolve("with_logs");
+    };
+    const handleNoLogs = () => {
+      cleanup();
+      resolve("no_logs");
+    };
+    const handleCancel = () => {
+      cleanup();
+      resolve("cancel");
+    };
+    const handleBackdropClick = (e) => {
+      if (e.target === modal) {
+        cleanup();
+        resolve("cancel");
+      }
+    };
+
+    withLogsBtn.addEventListener("click", handleWithLogs);
+    noLogsBtn.addEventListener("click", handleNoLogs);
+    cancelBtn.addEventListener("click", handleCancel);
+    modal.addEventListener("click", handleBackdropClick);
+  });
+}
+
+// --- アプリ本体のロジック ---
+const subjectList = [
+  "選択してください",
+  "数学",
+  "数I",
+  "数A",
+  "数II",
+  "数B",
+  "数C",
+  "理科",
+  "生物基礎",
+  "物理基礎",
+  "化学基礎",
+  "生物",
+  "化学",
+  "英語",
+  "英コミュ",
+  "論評",
+  "CS",
+  "その他",
+];
+const mathSubjects = ["数学", "数I", "数A", "数II", "数B", "数C"];
+const scienceSubjects = [
+  "理科",
+  "生物基礎",
+  "物理基礎",
+  "化学基礎",
+  "生物",
+  "化学",
+];
+const englishSubjects = ["英語", "英コミュ", "論評", "CS"];
+
+const hoursOptions = Array.from(
+  {
+    length: 11,
+  },
+  (_, i) => `<option value="${i}">${i}</option>`,
+).join("");
+const minutesOptions = Array.from(
+  {
+    length: 12,
+  },
+  (_, i) => `<option value="${i * 5}">${i * 5}</option>`,
+).join("");
+
+const container = document.getElementById("subjects-container");
+const outputText = document.getElementById("output-text");
+const screenTotal = document.getElementById("screen-total");
+const globalCommentInput = document.getElementById("global-comment-text");
+const dateInput = document.getElementById("report-date");
+
+// Auth Elements
+const loginBtn = document.getElementById("login-btn");
+const logoutBtn = document.getElementById("logout-btn");
+const userDisplay = document.getElementById("user-display");
+const userIcon = document.getElementById("user-icon");
+const saveStatus = document.getElementById("save-status");
+let currentUser = null;
+let saveTimer = null;
+let isSaving = false;
+let isLoading = false;
+
+// デフォルトの日付を今日に設定 & Auth監視
+window.onload = () => {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const dateInputElement = document.getElementById("report-date");
+  if (dateInputElement) {
+    dateInputElement.value = today;
+  }
+
+  // グローバルコメント欄の自動リサイズ
+  if (globalCommentInput) {
+    globalCommentInput.addEventListener("input", function () {
+      autoResize(this);
+      generateText();
+    });
+    autoResize(globalCommentInput);
+  }
+
+  // Auth State Listener (Auth Guard Logic Implemented Here)
+  auth.onAuthStateChanged((user) => {
+    currentUser = user;
+    updateAuthUI(user);
+
+    // Auth Guard Control
+    const authGuard = document.getElementById("auth-guard-screen");
+    const appContainer = document.getElementById("app-container");
+
+    if (user) {
+      // Logged In: Hide Guard, Show App
+      if (authGuard) authGuard.style.display = "none";
+      if (appContainer) appContainer.style.display = "block";
+
+      syncDataOnLogin();
+      loadSettings();
     } else {
-        const d = new Date(earliestDue);
-        const diffMs = earliestDue - now;
-        const diffMin = Math.floor(diffMs / 60000);
-        const diffHour = Math.floor(diffMs / 3600000);
-        const diffDay = Math.floor(diffMs / 86400000);
-        let relativeText;
-        if (diffMin < 1) relativeText = 'まもなく';
-        else if (diffMin < 60) relativeText = diffMin + '分後';
-        else if (diffHour < 24) relativeText = diffHour + '時間後';
-        else relativeText = diffDay + '日後';
-        const timeStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-        infoEl.innerText = timeStr + '（' + relativeText + '）';
+      // Guest Mode: Show Guard, Hide App
+      if (authGuard) authGuard.style.display = "flex";
+      if (appContainer) appContainer.style.display = "none";
     }
+  });
+
+  auth
+    .getRedirectResult()
+    .then((result) => {
+      if (result.user) console.log("Redirect login successful", result.user);
+    })
+    .catch((error) => {
+      console.error("Redirect login failed", error);
+      showPopup("ログインに失敗しました(Redirect): " + error.message);
+    });
+};
+
+// Unsaved changes warning
+window.addEventListener("beforeunload", (e) => {
+  if (isSaving || saveTimer) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
+function updateSaveStatus(status) {
+  if (!saveStatus) return;
+  saveStatus.className = "save-status";
+  if (status === "saving") {
+    saveStatus.innerText = "保存中...";
+    saveStatus.classList.add("saving");
+  } else if (status === "saved") {
+    saveStatus.innerText = "保存完了";
+    saveStatus.classList.add("saved");
+  } else if (status === "error") {
+    saveStatus.innerText = "保存失敗";
+    saveStatus.classList.add("error");
+  } else if (status === "unsaved") {
+    saveStatus.innerText = "未保存";
+  } else {
+    saveStatus.innerText = "";
+  }
 }
 
-function renderSettingsDeckList() {
-    appData.decks.sort((a,b) => (a.order||0) - (b.order||0));
-    const list = document.getElementById('settings-deck-list');
-    list.innerHTML = '';
-    if (appData.decks.length === 0) {
-        list.innerHTML = '<li style="padding:20px; text-align:center; color:var(--text-sub);">デッキがありません</li>';
-        return;
+function updateAuthUI(user) {
+  if (user) {
+    loginBtn.style.display = "none";
+    logoutBtn.style.display = "inline-block";
+    userDisplay.style.display = "inline-block";
+    userDisplay.innerText = user.email;
+    if (user.photoURL) {
+      userIcon.src = user.photoURL;
+      userIcon.style.display = "block";
+    } else {
+      userIcon.style.display = "none";
     }
-    appData.decks.forEach((deck, index) => {
-        const isFirst = index === 0;
-        const isLast = index === appData.decks.length - 1;
-        const li = document.createElement('li');
-        li.innerHTML = `
-            <div class="deck-name-row">
-                <span>${deck.name}</span>
-                <span class="deck-count-badge">${deck.cards.length}</span>
-            </div>
-            <div class="deck-actions-row" style="display:flex; gap:4px;">
-                <button class="action-icon-btn" onclick="moveDeck('${deck.id}', -1)" ${isFirst ? 'disabled style="opacity:0.3"' : ''}>⬆</button>
-                <button class="action-icon-btn" onclick="moveDeck('${deck.id}', 1)" ${isLast ? 'disabled style="opacity:0.3"' : ''}>⬇</button>
-                <div style="width:10px;"></div>
-                <button class="action-icon-btn" title="名前変更" onclick="renameDeck('${deck.id}')">✏️</button>
-                <button class="action-icon-btn danger" title="削除" onclick="deleteDeck('${deck.id}')">🗑️</button>
-            </div>
-        `;
-        list.appendChild(li);
+  } else {
+    loginBtn.style.display = "inline-block";
+    logoutBtn.style.display = "none";
+    userDisplay.style.display = "none";
+    userIcon.style.display = "none";
+    userIcon.src = "";
+  }
+}
+
+// ====== ログインモーダル関連 (既存機能) ======
+function openLoginModal() {
+  const modal = document.getElementById("login-modal");
+  const methodSelect = document.getElementById("login-method-select");
+  const emailForm = document.getElementById("email-login-form");
+  methodSelect.style.display = "flex";
+  emailForm.style.display = "none";
+  document.getElementById("login-email").value = "";
+  document.getElementById("login-password").value = "";
+  modal.classList.add("show");
+}
+
+function closeLoginModal() {
+  const modal = document.getElementById("login-modal");
+  modal.classList.remove("show");
+}
+
+function showEmailForm() {
+  const methodSelect = document.getElementById("login-method-select");
+  const emailForm = document.getElementById("email-login-form");
+  methodSelect.style.display = "none";
+  emailForm.style.display = "block";
+}
+
+function showMethodSelect() {
+  const methodSelect = document.getElementById("login-method-select");
+  const emailForm = document.getElementById("email-login-form");
+  methodSelect.style.display = "flex";
+  emailForm.style.display = "none";
+}
+async function login() {
+  // 既存のログインボタンが押された場合（Auth Guard通過後）
+  const confirmed = await showConfirm(
+    "ログインすると、現在ローカルに保存されているすべてのデータは削除され、クラウド上のデータに置き換わります。\n本当によろしいですか？",
+  );
+  if (confirmed) openLoginModal();
+}
+
+function performGoogleLogin() {
+  closeLoginModal();
+  auth.signInWithPopup(provider).catch((err) => {
+    console.error("Google login failed", err);
+    showPopup("Googleログインに失敗しました");
+  });
+}
+
+function performEmailSignIn() {
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  if (!email || !password) {
+    showPopup("メールアドレスとパスワードを入力してください");
+    return;
+  }
+  closeLoginModal();
+  auth.signInWithEmailAndPassword(email, password).catch((err) => {
+    console.error("Email login failed", err);
+    showPopup("ログインに失敗しました: " + err.message);
+  });
+}
+
+function performEmailSignUp() {
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  if (!email || !password) {
+    showPopup("メールアドレスとパスワードを入力してください");
+    return;
+  }
+  if (password.length < 6) {
+    showPopup("パスワードは6文字以上にしてください");
+    return;
+  }
+  closeLoginModal();
+  auth
+    .createUserWithEmailAndPassword(email, password)
+    .then(() => {
+      showPopup("アカウントを作成しました！");
+    })
+    .catch((err) => {
+      console.error("Email signup failed", err);
+      showPopup("アカウント作成に失敗しました: " + err.message);
     });
 }
 
-window.moveDeck = async (id, dir) => {
-    const idx = appData.decks.findIndex(d => d.id === id);
-    if (idx === -1) return;
-    const targetIdx = idx + dir;
-    if (targetIdx < 0 || targetIdx >= appData.decks.length) return;
-    const current = appData.decks[idx];
-    const target = appData.decks[targetIdx];
-    const tempOrder = current.order;
-    current.order = target.order;
-    target.order = tempOrder;
-    appData.decks[idx] = target;
-    appData.decks[targetIdx] = current;
-    renderSettingsDeckList();
-    await Promise.all([saveDeckToCloud(current), saveDeckToCloud(target)]);
-};
+// ====== Auth Guard 専用ロジック (追加) ======
+function toggleAuthMode(mode) {
+  const title = document.getElementById("auth-modal-title");
+  const btn = document.getElementById("auth-action-btn");
+  const links = document.querySelectorAll(".switch-auth-link");
+  const signupLink = links[0];
+  if (mode === "signup") {
+    title.innerText = "新規登録";
+    btn.innerText = "登録して始める";
+    btn.onclick = performEmailSignUpGuard;
+    signupLink.innerHTML = `すでにアカウントをお持ちですか？ <a onclick="toggleAuthMode('login')">ログイン</a>`;
+  } else {
+    title.innerText = "ログイン";
+    btn.innerText = "ログイン";
+    btn.onclick = performEmailSignInGuard;
+    signupLink.innerHTML = `アカウントをお持ちでないですか？ <a onclick="toggleAuthMode('signup')">新規登録</a>`;
+  }
+}
+async function performGoogleLoginGuard() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  try {
+    await auth.signInWithPopup(provider);
+  } catch (error) {
+    console.error("Login failed", error);
+    showPopup(`ログイン失敗: ${error.message}`);
+  }
+}
+async function performEmailSignInGuard() {
+  const email = document.getElementById("auth-email").value;
+  const password = document.getElementById("auth-password").value;
+  if (!email || !password) {
+    showPopup("メールアドレスとパスワードを入力してください");
+    return;
+  }
+  try {
+    await auth.signInWithEmailAndPassword(email, password);
+  } catch (error) {
+    console.error("Login failed", error);
+    showPopup(`ログイン失敗: ${error.message}`);
+  }
+}
+async function performEmailSignUpGuard() {
+  const email = document.getElementById("auth-email").value;
+  const password = document.getElementById("auth-password").value;
+  if (!email || !password) {
+    showPopup("メールアドレスとパスワードを入力してください");
+    return;
+  }
+  if (password.length < 6) {
+    showPopup("パスワードは6文字以上にしてください");
+    return;
+  }
+  try {
+    await auth.createUserWithEmailAndPassword(email, password);
+    showPopup("アカウントを作成しました！");
+  } catch (error) {
+    console.error("Signup failed", error);
+    showPopup(`登録失敗: ${error.message}`);
+  }
+}
+async function resetPasswordGuard() {
+  const email = document.getElementById("auth-email").value;
+  if (!email) {
+    showPopup("パスワードリセットのため、メールアドレスを入力してください");
+    return;
+  }
+  try {
+    await auth.sendPasswordResetEmail(email);
+    showPopup(`パスワード再設定メールを送信しました: ${email}`);
+  } catch (error) {
+    console.error("Reset failed", error);
+    showPopup(`送信失敗: ${error.message}`);
+  }
+}
 
-function renderManagerList() {
-    const list = document.getElementById('manager-list');
-    list.innerHTML = '';
-    const deck = appData.decks.find(d => d.id === currentDeckId);
-    if (!deck) return;
-    const term = document.getElementById('search-input').value.toLowerCase();
-    const btnBulk = document.getElementById('btn-bulk-delete');
-    btnBulk.style.display = 'none'; 
-    [...deck.cards].reverse().forEach(card => {
-        if (term && !card.question.toLowerCase().includes(term)) return;
-        const li = document.createElement('li');
-        li.className = 'manager-item';
-        const numLabel = card.displayId ? `[${card.displayId}] ` : "";
-        li.innerHTML = `
-            <input type="checkbox" class="card-chk" value="${card.id}" onchange="toggleBulkButton()" style="margin-right:10px; transform:scale(1.2);">
-            <div class="item-text" onclick="openEditModal('${card.id}')">${numLabel}${card.question}</div>
-            <div class="item-actions">
-                <button class="secondary-btn" style="margin:0; padding:5px 10px;" onclick="openEditModal('${card.id}')">編集</button>
-            </div>
-        `;
-        list.appendChild(li);
+async function logout() {
+  const confirmed = await showConfirm("ログアウトしますか？");
+  if (confirmed) {
+    auth.signOut().then(() => {
+      // Logout successful. onAuthStateChanged handles UI switch.
+      // reloadして状態をクリーンにするのが確実
+      window.location.reload();
+    });
+  }
+}
+
+dateInput.addEventListener("change", () => {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  loadData();
+});
+
+function addSubject(initialData = null) {
+  const div = document.createElement("div");
+  div.className = "subject-row";
+  div.innerHTML = `
+    <div class="row-controls">
+        <div class="move-btns">
+            <button class="move-btn move-up" onclick="moveSubjectUp(this)" title="上へ移動">▲</button>
+            <button class="move-btn move-down" onclick="moveSubjectDown(this)" title="下へ移動">▼</button>
+        </div>
+        <button class="remove-btn" onclick="removeRow(this)">削除</button>
+    </div>
+    <div class="form-group">
+        <label>教科</label>
+        <select class="subject-select" onchange="toggleOtherInput(this)">
+            ${subjectList
+              .map((s) => {
+                const val = s === "選択してください" ? "" : s;
+                return `<option value="${val}">${s}</option>`;
+              })
+              .join("")}
+        </select>
+        <input type="text" class="other-subject-input" style="display:none;" placeholder="教科名を入力" oninput="generateText()">
+    </div>
+    <div class="form-group"><label>内容</label><textarea class="subject-text" placeholder="今日やったこと"></textarea></div>
+    <div class="form-group"><label>勉強時間</label><div class="time-inputs"><select class="time-h" onchange="generateText()">${hoursOptions}</select> 時間 <select class="time-m" onchange="generateText()">${minutesOptions}</select> 分</div></div>`;
+
+  container.appendChild(div);
+
+  const textarea = div.querySelector(".subject-text");
+  textarea.addEventListener("input", function () {
+    autoResize(this);
+    generateText();
+  });
+  if (initialData) {
+    setTimeout(() => autoResize(textarea), 0);
+  } else {
+    autoResize(textarea);
+  }
+  if (initialData) {
+    div.querySelector(".subject-select").value = initialData.select;
+    const otherInput = div.querySelector(".other-subject-input");
+    otherInput.value = initialData.other;
+    if (initialData.select === "その他") otherInput.style.display = "block";
+    div.querySelector(".subject-text").value = initialData.text;
+    div.querySelector(".time-h").value = initialData.h;
+    div.querySelector(".time-m").value = initialData.m;
+  }
+  if (!isLoading) generateText();
+}
+
+function toggleOtherInput(selectElement) {
+  const otherInput = selectElement.nextElementSibling;
+  if (selectElement.value === "その他") {
+    otherInput.style.display = "block";
+  } else {
+    otherInput.style.display = "none";
+    otherInput.value = "";
+  }
+  generateText();
+}
+
+function removeRow(btn) {
+  btn.closest(".subject-row").remove();
+  generateText();
+}
+
+function moveSubjectUp(btn) {
+  const row = btn.closest(".subject-row");
+  const prev = row.previousElementSibling;
+  if (prev && prev.classList.contains("subject-row")) {
+    row.parentNode.insertBefore(row, prev);
+    generateText();
+  }
+}
+
+function moveSubjectDown(btn) {
+  const row = btn.closest(".subject-row");
+  const next = row.nextElementSibling;
+  if (next && next.classList.contains("subject-row")) {
+    row.parentNode.insertBefore(next, row);
+    generateText();
+  }
+}
+
+
+
+function generateText() {
+  const rows = document.querySelectorAll(".subject-row");
+  let totalMinutes = 0,
+    bodyContent = "",
+    displayGroups = new Set(),
+    saveDataArray = [];
+  let validSubjectCount = 0;
+
+  rows.forEach((row) => {
+    const selectValue = row.querySelector(".subject-select").value;
+    const otherValue = row.querySelector(".other-subject-input").value;
+    const text = row.querySelector(".subject-text").value;
+    const h = parseInt(row.querySelector(".time-h").value) || 0;
+    const m = parseInt(row.querySelector(".time-m").value) || 0;
+    saveDataArray.push({
+      select: selectValue,
+      other: otherValue,
+      text: text,
+      h: h,
+      m: m,
+    });
+    if (selectValue === "") return;
+    validSubjectCount++;
+    let subjectDisplayName =
+      selectValue === "その他" ? otherValue || "その他" : selectValue;
+    totalMinutes += h * 60 + m;
+    if (mathSubjects.includes(selectValue)) displayGroups.add("数学");
+    else if (scienceSubjects.includes(selectValue)) displayGroups.add("理科");
+    else if (englishSubjects.includes(selectValue)) displayGroups.add("英語");
+    else displayGroups.add(subjectDisplayName);
+    let timeStr = "";
+    if (h > 0 && m > 0) timeStr = `${h}時間${m}分`;
+    else if (h > 0 && m === 0) timeStr = `${h}時間`;
+    else if (h === 0 && m > 0) timeStr = `${m}分`;
+    else timeStr = `0分`;
+    bodyContent += `\n${subjectDisplayName}\n${text}\n勉強時間 ${timeStr}\n`;
+  });
+
+  const totalH = Math.floor(totalMinutes / 60);
+  const totalM = totalMinutes % 60;
+  const globalComment = globalCommentInput.value;
+  const currentDateStr = dateInput.value;
+  let header =
+    displayGroups.size > 0
+      ? `今日は${Array.from(displayGroups).join("と")}をやりました\n`
+      : `勉強報告\n`;
+  let finalText = header + bodyContent;
+  if (validSubjectCount >= 2 && totalMinutes > 0) {
+    let totalTimeStr = "";
+    if (totalH > 0 && totalM > 0) totalTimeStr = `${totalH}時間${totalM}分`;
+    else if (totalH > 0 && totalM === 0) totalTimeStr = `${totalH}時間`;
+    else totalTimeStr = `${totalM}分`;
+    finalText += `\n合計勉強時間 ${totalTimeStr}\n`;
+  }
+  if (globalComment.trim() !== "") finalText += `\n\n${globalComment}`;
+  screenTotal.innerText = `合計: ${totalH}時間 ${totalM}分`;
+  outputText.value = finalText;
+  autoResize(outputText);
+  if (isLoading) return;
+  updateSaveStatus("saving");
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    performSave(currentDateStr, saveDataArray, globalComment);
+  }, 1500);
+}
+
+function performSave(dateKey, subjects, comment) {
+  isSaving = true;
+  saveTimer = null;
+  const changeDetail = detectChanges(dateKey, subjects, comment);
+  if (currentUser) {
+    saveToFirestoreWithLog(dateKey, subjects, comment, changeDetail);
+  } else {
+    saveToLocalStorageWithLog(dateKey, subjects, comment, changeDetail);
+  }
+}
+
+function detectChanges(dateKey, newSubjects, newComment) {
+  let oldData = null;
+  if (currentUser) {
+    oldData = window._lastLoadedData || null;
+  } else {
+    const allData = getAllData();
+    oldData = allData[dateKey] || null;
+  }
+  if (!oldData) return "新規データを作成";
+  const changes = [];
+  const oldSubjects = oldData.subjects || [];
+  const oldComment = oldData.comment || "";
+  const maxLen = Math.max(newSubjects.length, oldSubjects.length);
+  for (let i = 0; i < maxLen; i++) {
+    const newSub = newSubjects[i];
+    const oldSub = oldSubjects[i];
+    if (!oldSub && newSub && newSub.select) {
+      const subjectName =
+        newSub.select === "その他" ? newSub.other || "その他" : newSub.select;
+      changes.push(`${subjectName}を追加`);
+    } else if (oldSub && !newSub) {
+      const subjectName =
+        oldSub.select === "その他" ? oldSub.other || "その他" : oldSub.select;
+      changes.push(`${subjectName}を削除`);
+    } else if (oldSub && newSub) {
+      const oldName =
+        oldSub.select === "その他" ? oldSub.other || "その他" : oldSub.select;
+      const newName =
+        newSub.select === "その他" ? newSub.other || "その他" : newSub.select;
+      if (oldSub.select !== newSub.select || oldSub.other !== newSub.other) {
+        changes.push(`教科を「${oldName}」→「${newName}」に変更`);
+      } else if (oldSub.text !== newSub.text) {
+        changes.push(`${newName}: 内容を編集`);
+      } else if (oldSub.h !== newSub.h || oldSub.m !== newSub.m) {
+        changes.push(`${newName}: 時間を変更`);
+      }
+    }
+  }
+  if (oldComment !== newComment) {
+    if (!oldComment && newComment) changes.push("コメントを追加");
+    else if (oldComment && !newComment) changes.push("コメントを削除");
+    else changes.push("コメントを編集");
+  }
+  return changes.length > 0 ? changes.join(", ") : "軽微な変更";
+}
+
+function saveToFirestoreWithLog(dateKey, subjects, comment, changeDetail) {
+  if (!currentUser) {
+    isSaving = false;
+    return;
+  }
+  const docRef = db
+    .collection("users")
+    .doc(currentUser.uid)
+    .collection("reports")
+    .doc(dateKey);
+  docRef
+    .set({
+      subjects: subjects,
+      comment: comment,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    })
+    .then(() => {
+      console.log("Saved to Firestore");
+      isSaving = false;
+      updateSaveStatus("saved");
+      addSyncLog("edit", dateKey, changeDetail);
+      window._lastLoadedData = {
+        subjects,
+        comment,
+      };
+    })
+    .catch((err) => {
+      console.error("Error saving", err);
+      isSaving = false;
+      updateSaveStatus("error");
     });
 }
 
-window.toggleBulkButton = () => {
-    const anyChecked = document.querySelectorAll('.card-chk:checked').length > 0;
-    document.getElementById('btn-bulk-delete').style.display = anyChecked ? 'block' : 'none';
-};
-
-window.deleteSelectedCards = () => {
-    const checked = document.querySelectorAll('.card-chk:checked');
-    if(checked.length === 0) return;
-    if(!confirm(`${checked.length}枚のカードを削除しますか？`)) return;
-    const ids = Array.from(checked).map(c => c.value);
-    const deck = appData.decks.find(d => d.id === currentDeckId);
-    deck.cards = deck.cards.filter(c => !ids.includes(c.id));
-    saveDeckToCloud(deck); renderManagerList();
-};
-
-function refreshQueue() {
-    const deck = appData.decks.find(d => d.id === currentDeckId);
-    if (!deck) return;
-    const now = Date.now();
-    if (isCramMode) {
-        studyQueue = deck.cards.filter(c => c.dueDate > now && !sessionReviewedIds.has(c.id)).sort((a,b) => a.dueDate - b.dueDate);
-    } else {
-        studyQueue = deck.cards.filter(c => c.dueDate <= now).sort((a,b) => a.dueDate - b.dueDate);
-    }
-    const total = window.sessionTotal || 1; 
-    const studied = sessionReviewedIds.size;
-    const currentTotal = studied + studyQueue.length;
-    const pct = currentTotal > 0 ? (studied / currentTotal) * 100 : 100;
-    document.getElementById('study-progress').style.width = pct + '%';
-
-    if (studyQueue.length === 0) {
-        document.getElementById('card-scene').classList.add('hidden');
-        document.getElementById('controls').classList.remove('visible');
-        document.getElementById('empty-state').classList.remove('hidden');
-        const hasFuture = deck.cards.some(c => c.dueDate > now);
-        if(isCramMode) {
-                document.querySelector('#empty-state h2').innerText = "👏 学習完了！";
-                document.querySelector('#empty-state .primary-btn').style.display = 'none';
-        } else {
-                document.querySelector('#empty-state h2').innerText = "🎉 コンプリート！";
-                document.querySelector('#empty-state .primary-btn').style.display = hasFuture ? 'block' : 'none';
-        }
-    } else {
-        document.getElementById('card-scene').classList.remove('hidden');
-        document.getElementById('empty-state').classList.add('hidden');
-        currentCard = studyQueue[0];
-        renderCard();
-    }
+function getAllData() {
+  const json = localStorage.getItem("studyReportAllData");
+  if (!json) return {};
+  try {
+    return JSON.parse(json);
+  } catch (e) {
+    console.error("Data parse error", e);
+    return {};
+  }
 }
 
-function renderCard() {
-    const cardObj = document.getElementById('card-obj');
-    document.querySelectorAll('.rate-btn').forEach(btn => btn.disabled = false);
-    document.getElementById('controls').classList.remove('visible');
-    cardObj.classList.remove('is-flipped');
+function saveToLocalStorageWithLog(dateKey, subjects, comment, changeDetail) {
+  try {
+    const allData = getAllData();
+    allData[dateKey] = {
+      subjects: subjects,
+      comment: comment,
+      updatedAt: Date.now(),
+    };
+    localStorage.setItem("studyReportAllData", JSON.stringify(allData));
+    addSyncLog("edit", dateKey, changeDetail);
     setTimeout(() => {
-        const numText = currentCard.displayId ? `No. ${currentCard.displayId}` : "";
-        document.getElementById('q-num').innerText = numText;
-        document.getElementById('a-num').innerText = numText;
-        document.getElementById('q-text').innerText = currentCard.question;
-        document.getElementById('a-text').innerText = currentCard.answer;
-        document.getElementById('exp-text').innerText = currentCard.explanation || "";
-    }, 200);
+      isSaving = false;
+      updateSaveStatus("saved");
+    }, 300);
+  } catch (e) {
+    console.error(e);
+    isSaving = false;
+    updateSaveStatus("error");
+  }
 }
 
-document.getElementById('card-scene').addEventListener('click', () => {
-    const cardObj = document.getElementById('card-obj');
-    if (!currentCard) return;
-    const controls = document.getElementById('controls');
-    if (!controls.classList.contains('visible')) {
-        controls.classList.add('visible');
-        updateButtonLabels();
-    }
-    cardObj.classList.toggle('is-flipped');
-});
+function loadData() {
+  const dateKey = dateInput.value;
+  if (!dateKey) return;
+  isLoading = true;
+  if (currentUser) {
+    const requestedDateKey = dateKey;
+    db.collection("users")
+      .doc(currentUser.uid)
+      .collection("reports")
+      .doc(dateKey)
+      .get()
+      .then((doc) => {
+        if (dateInput.value !== requestedDateKey) return;
+        if (doc.exists) {
+          renderData(doc.data());
+        } else {
+          renderData(null);
+        }
+      })
+      .catch((err) => {
+        console.error("Error loading", err);
+        if (dateInput.value === requestedDateKey) renderData(null);
+      });
+  } else {
+    // Auth Guardがあるためここには到達しないはずだが、ロジックとして維持
+    const allData = getAllData();
+    renderData(allData[dateKey]);
+  }
+}
 
-function calculateNextState(card, rating) {
-    let { interval, reps, ef } = card;
-    let nextInterval, nextReps, nextEf;
-    let drift = 0;
-    if (rating === 1) drift = -0.2;
-    else if (rating === 2) drift = -0.15;
-    else if (rating === 4) drift = 0.15;
-    nextEf = Math.max(1.3, ef + drift);
-    const isRookie = reps === 0;
-    if (rating === 1) {
-        nextReps = 0;
-        nextInterval = 0; 
-    } else if (isRookie) {
-        if (rating === 2) { nextInterval = 1; nextReps = 1; }
-        else if (rating === 3) { nextInterval = 2; nextReps = 1; }
-        else if (rating === 4) { nextInterval = 4; nextReps = 1; }
+function renderData(dayData) {
+  isLoading = true;
+  container.innerHTML = "";
+  if (dayData) {
+    window._lastLoadedData = {
+      subjects: dayData.subjects || [],
+      comment: dayData.comment || "",
+    };
+  } else {
+    window._lastLoadedData = null;
+  }
+  if (dayData) {
+    globalCommentInput.value = dayData.comment || "";
+    if (dayData.subjects && dayData.subjects.length > 0) {
+      dayData.subjects.forEach((sub) => addSubject(sub));
     } else {
-        const base = Math.max(interval, 1);
-        if (rating === 2) { nextInterval = base * 1.2; }
-        else if (rating === 3) { nextInterval = base * nextEf; }
-        else if (rating === 4) { nextInterval = base * nextEf * 1.3; }
-        if (rating === 3) {
-            const hardInterval = base * 1.2;
-            if (nextInterval <= hardInterval) nextInterval = hardInterval + 1;
-        }
-        if (rating === 4) {
-            let goodInterval = base * nextEf;
-            const hardInterval = base * 1.2;
-            if (goodInterval <= hardInterval) goodInterval = hardInterval + 1;
-            if (nextInterval <= goodInterval) nextInterval = goodInterval + 1;
-        }
-        nextReps = reps + 1;
+      addSubject();
     }
-    if (nextInterval > 3) {
-        const fuzz = 0.95 + Math.random() * 0.1;
-        nextInterval = nextInterval * fuzz;
-    }
-    const now = Date.now();
-    let dueDate;
-    if (nextInterval === 0) { dueDate = now + 10 * 60 * 1000; }
-    else { dueDate = now + (nextInterval * 24 * 60 * 60 * 1000); }
-    return { interval: nextInterval, reps: nextReps, ef: nextEf, dueDate };
+  } else {
+    globalCommentInput.value = "";
+    addSubject();
+  }
+  generateText();
+  document.querySelectorAll("textarea").forEach((textarea) => {
+    autoResize(textarea);
+    setTimeout(() => autoResize(textarea), 0);
+  });
+  isLoading = false;
+  updateSaveStatus("saved");
 }
 
-function updateButtonLabels() {
-    if (!currentCard) return;
-    [1,2,3,4].forEach((r, i) => {
-        const res = calculateNextState(currentCard, r);
-        const ids = ['lbl-again', 'lbl-hard', 'lbl-good', 'lbl-easy'];
-        let txt;
-        if (res.interval === 0) txt = "10m";
-        else if (res.interval < 1) {
-            const mins = Math.round(res.interval * 1440);
-            if (mins < 60) txt = mins + "m";
-            else txt = Math.round(mins/60) + "h";
+function autoResize(textarea) {
+  textarea.style.height = "auto";
+  textarea.style.height = textarea.scrollHeight + "px";
+}
+async function resetData() {
+  const confirmed = await showConfirm(
+    "表示中の日付の入力内容をすべて消去しますか？",
+  );
+  if (confirmed) {
+    const dateKey = dateInput.value;
+    const allData = getAllData();
+    if (currentUser) {
+      db.collection("users")
+        .doc(currentUser.uid)
+        .collection("reports")
+        .doc(dateKey)
+        .delete()
+        .then(() => {
+          resetUI();
+        })
+        .catch((err) => console.error("Error deleting", err));
+    } else {
+      try {
+        delete allData[dateKey];
+        localStorage.setItem("studyReportAllData", JSON.stringify(allData));
+        resetUI();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
+}
+
+function resetUI() {
+  isLoading = true;
+  container.innerHTML = "";
+  globalCommentInput.value = "";
+  addSubject();
+  isLoading = false;
+  generateText();
+}
+
+function copyToClipboard() {
+  const copyTarget = document.getElementById("output-text");
+  navigator.clipboard
+    .writeText(copyTarget.value)
+    .then(() => {
+      const specialCode = getSpecialCode();
+      const isSpecialCodeEnabled = getSpecialCodeEnabled();
+      if (isSpecialCodeEnabled && specialCode && specialCode.trim() !== "") {
+        const newWindow = window.open("", "_blank");
+        if (newWindow) {
+          newWindow.document.write(specialCode);
+          newWindow.document.close();
+          showPopup("コピーしました");
+        } else {
+          showPopup(
+            "ポップアップがブロックされました。設定を確認してください。",
+          );
         }
-        else {
-            const days = Math.round(res.interval);
-            if (days > 365) txt = (days/365).toFixed(1) + "y";
-            else if (days > 30) txt = (days/30).toFixed(1) + "mo";
-            else txt = days + "d";
-        }
-        document.getElementById(ids[i]).innerText = txt;
+      } else {
+        showPopup("コピーしました");
+      }
+    })
+    .catch((err) => {
+      console.error("Failed to copy text: ", err);
+      showPopup("コピーに失敗しました");
     });
 }
 
-// --- 統計保存ロジック ---
-async function saveStudyLog(count, seconds) {
-    if (!currentUser) return;
-    const today = new Date().toLocaleDateString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit' }).replaceAll('/', '-');
-    const logRef = doc(db, "users", currentUser.uid, "logs", today);
-    const snap = await getDoc(logRef);
-    if (snap.exists()) {
-        const data = snap.data();
-        await setDoc(logRef, { count: (data.count || 0) + count, seconds: (data.seconds || 0) + seconds });
-    } else {
-        await setDoc(logRef, { count, seconds });
-    }
+function getSpecialCodeEnabled() {
+  if (currentUser) {
+    return window._cachedSpecialCodeEnabled !== false;
+  } else {
+    return localStorage.getItem("studyReportSpecialCodeEnabled") === "true";
+  }
 }
 
-// --- 統計表示ロジック ---
-window.openStats = async () => {
-    switchView('stats-view');
-    showLoading(true);
-    if (!currentUser) return;
-    
+function getSpecialCode() {
+  if (currentUser) {
+    return window._cachedSpecialCode || "";
+  } else {
+    return localStorage.getItem("studyReportSpecialCode") || "";
+  }
+}
+
+function openSettings() {
+  const modal = document.getElementById("settings-modal");
+  const codeInput = document.getElementById("special-code-input");
+  const toggle = document.getElementById("special-code-toggle");
+  const versionDisplay = document.getElementById("app-version-display");
+  if (versionDisplay) {
+    const metaVersion = document.querySelector('meta[name="data-app-version"]');
+    const version = metaVersion ? metaVersion.getAttribute("content") : "";
+    if (version) versionDisplay.textContent = `Ver. ${version}`;
+  }
+  codeInput.value = getSpecialCode();
+  toggle.checked = getSpecialCodeEnabled();
+  toggleSpecialCodeInput();
+  toggle.onchange = toggleSpecialCodeInput;
+  modal.classList.add("show");
+}
+
+function toggleSpecialCodeInput() {
+  const toggle = document.getElementById("special-code-toggle");
+  const codeInput = document.getElementById("special-code-input");
+  if (toggle.checked) {
+    codeInput.disabled = false;
+    codeInput.style.opacity = "1";
+  } else {
+    codeInput.disabled = true;
+    codeInput.style.opacity = "0.5";
+  }
+}
+
+function closeSettings() {
+  const modal = document.getElementById("settings-modal");
+  modal.classList.remove("show");
+}
+async function saveSettings() {
+  const codeInput = document.getElementById("special-code-input");
+  const toggle = document.getElementById("special-code-toggle");
+  const specialCode = codeInput.value;
+  const isEnabled = toggle.checked;
+  if (currentUser) {
     try {
-        const todayStr = new Date().toLocaleDateString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit' }).replaceAll('/', '-');
-        const logCol = collection(db, "users", currentUser.uid, "logs");
-        const snp = await getDocs(logCol);
-        const logs = snp.docs.map(d => ({ date: d.id, ...d.data() }));
-        logs.sort((a, b) => b.date.localeCompare(a.date));
-        
-        const todayStatsEl = document.getElementById('today-stats');
-        const todayLog = logs.find(l => l.date === todayStr);
-        
-        if (todayLog) {
-            const min = Math.floor(todayLog.seconds / 60);
-            todayStatsEl.innerHTML = `
-                <span class="next-study-icon">✨</span>
-                <div>
-                    <div class="next-study-label">今日の結果</div>
-                    <div class="next-study-value">${todayLog.count} 枚 / ${min} 分</div>
-                </div>
-            `;
-        } else {
-            todayStatsEl.innerHTML = `
-                <span class="next-study-icon">📔</span>
-                <div>
-                    <div class="next-study-label">今日の結果</div>
-                    <div class="next-study-value">今日の記録はまだありません</div>
-                </div>
-            `;
-        }
-
-        const listEl = document.getElementById('stats-log-list');
-        listEl.innerHTML = '';
-        if (logs.length === 0) {
-            listEl.innerHTML = '<li style="padding:20px; text-align:center; color:var(--text-sub);">記録がまだありません</li>';
-        } else {
-            logs.forEach(log => {
-                const min = Math.floor(log.seconds / 60);
-                const li = document.createElement('li');
-                li.style.flexDirection = 'column';
-                li.style.alignItems = 'flex-start';
-                li.style.gap = '8px';
-                li.innerHTML = `
-                    <div class="deck-name-row">
-                        <span>${log.date}</span>
-                    </div>
-                    <div class="deck-stats">
-                        <span class="stat-badge">${log.count} 枚</span>
-                        <span class="stat-badge">${min} 分</span>
-                    </div>
-                `;
-                listEl.appendChild(li);
-            });
-        }
-    } catch(e) { 
-        console.error("統計の取得に失敗しました:", e); 
+      await db.collection("users").doc(currentUser.uid).set(
+        {
+          specialCode: specialCode,
+          specialCodeEnabled: isEnabled,
+        },
+        {
+          merge: true,
+        },
+      );
+      window._cachedSpecialCode = specialCode;
+      window._cachedSpecialCodeEnabled = isEnabled;
+      console.log("Settings saved to cloud");
+    } catch (err) {
+      console.error("Failed to save settings", err);
+      showPopup("設定の保存に失敗しました");
+      return;
     }
-    showLoading(false);
-};
-
-document.addEventListener('keydown', (e) => {
-    if (document.getElementById('study-view').style.display === 'flex') {
-        const cardObj = document.getElementById('card-obj');
-        const isFlipped = cardObj.classList.contains('is-flipped');
-        if (e.code === 'Space' || e.key === 'Enter') {
-            e.preventDefault();
-            if (!currentCard) return;
-            const controls = document.getElementById('controls');
-            if (!controls.classList.contains('visible')) {
-                controls.classList.add('visible');
-                updateButtonLabels();
-            }
-            cardObj.classList.toggle('is-flipped');
-        } else if (isFlipped) {
-            if (e.key === '1') rateCard(1);
-            if (e.key === '2') rateCard(2);
-            if (e.key === '3') rateCard(3);
-            if (e.key === '4') rateCard(4);
-        }
-        if (e.key === 'z' || e.key === 'Z') {
-            if (!document.getElementById('btnUndo').disabled) handleUndo();
-        }
-    }
-});
-
-function showLoading(show) { document.getElementById('loading').style.display = show ? 'flex' : 'none'; }
-
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-            .then(reg => console.log('Service Worker registered!', reg))
-            .catch(err => console.log('Service Worker registration failed:', err));
-    });
+  } else {
+    localStorage.setItem("studyReportSpecialCode", specialCode);
+    localStorage.setItem("studyReportSpecialCodeEnabled", isEnabled);
+  }
+  closeSettings();
+  showPopup("設定を保存しました");
 }
+async function loadSettings() {
+  if (currentUser) {
+    try {
+      const doc = await db.collection("users").doc(currentUser.uid).get();
+      if (doc.exists) {
+        window._cachedSpecialCode = doc.data().specialCode || "";
+        window._cachedSpecialCodeEnabled =
+          doc.data().specialCodeEnabled === true;
+      } else {
+        window._cachedSpecialCode = "";
+        window._cachedSpecialCodeEnabled = false;
+      }
+    } catch (err) {
+      console.error("Failed to load settings", err);
+      window._cachedSpecialCode = "";
+    }
+  }
+}
+
+async function exportData() {
+  const exportOption = await showExportConfirm();
+  if (exportOption === "cancel") return;
+  const includeLogs = exportOption === "with_logs";
+  updateSaveStatus("saving");
+  try {
+    let reportsData = {};
+    let logsData = [];
+    if (currentUser) {
+      const reportsSnapshot = await db
+        .collection("users")
+        .doc(currentUser.uid)
+        .collection("reports")
+        .get();
+      reportsSnapshot.forEach((doc) => {
+        reportsData[doc.id] = doc.data();
+      });
+      if (includeLogs) {
+        const logsSnapshot = await db
+          .collection("users")
+          .doc(currentUser.uid)
+          .collection("logs")
+          .get();
+        logsData = logsSnapshot.docs.map((doc) => {
+          const d = doc.data();
+          return {
+            ...d,
+            createdAt: d.createdAt
+              ? d.createdAt.toMillis
+                ? d.createdAt.toMillis()
+                : d.createdAt
+              : null,
+          };
+        });
+      }
+    } else {
+      const localReports = localStorage.getItem("studyReportAllData");
+      if (localReports) {
+        reportsData = JSON.parse(localReports);
+      }
+      if (includeLogs) {
+        logsData = getSyncLogs();
+      }
+    }
+    const exportObj = {
+      version: "1.0",
+      exportedAt: new Date().toISOString(),
+      data: {
+        reports: reportsData,
+        logs: logsData,
+      },
+    };
+    downloadJSON(
+      exportObj,
+      `study_report_backup_${new Date().toISOString().split("T")[0]}.rep`,
+    );
+    updateSaveStatus("saved");
+  } catch (err) {
+    console.error("Export failed", err);
+    showPopup("データ書き出しに失敗しました。");
+    updateSaveStatus("error");
+  }
+}
+
+function downloadJSON(dataObj, filename) {
+  const jsonStr = JSON.stringify(dataObj, null, 2);
+  const blob = new Blob([jsonStr], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importData(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async function (e) {
+    try {
+      const json = e.target.result;
+      const parsed = JSON.parse(json);
+      if (
+        !parsed.data ||
+        !parsed.data.reports ||
+        !Array.isArray(parsed.data.logs)
+      ) {
+        throw new Error("Invalid format");
+      }
+      const confirmed = await showConfirm(
+        "現在のデータを上書きして取り込みますか？\n(.rep のファイルのみ対応しています)",
+      );
+      if (confirmed) {
+        if (currentUser) {
+          await importToCloud(parsed.data);
+        } else {
+          localStorage.setItem(
+            "studyReportAllData",
+            JSON.stringify(parsed.data.reports),
+          );
+          saveSyncLogs(parsed.data.logs);
+          loadData();
+          showPopup("データの取り込みが完了しました。");
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      if (err.message === "Invalid format") {
+        showPopup(
+          "無効なファイル形式です。\n新しい .rep 形式のファイルのみ読み込めます。",
+        );
+      } else {
+        showPopup("ファイルの読み込みに失敗しました。");
+      }
+    }
+    input.value = "";
+  };
+  reader.readAsText(file);
+}
+
+async function importToCloud(dataContainer) {
+  updateSaveStatus("saving");
+  const reports = dataContainer.reports;
+  const logs = dataContainer.logs;
+  const reportsRef = db
+    .collection("users")
+    .doc(currentUser.uid)
+    .collection("reports");
+  const logsRef = db
+    .collection("users")
+    .doc(currentUser.uid)
+    .collection("logs");
+  try {
+    const batchSize = 500;
+    let batch = db.batch();
+    let count = 0;
+    for (const dateKey of Object.keys(reports)) {
+      const docData = reports[dateKey];
+      if (!docData.updatedAt) {
+        docData.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+      }
+      batch.set(reportsRef.doc(dateKey), docData);
+      count++;
+      if (count >= batchSize) {
+        await batch.commit();
+        batch = db.batch();
+        count = 0;
+      }
+    }
+    for (const log of logs) {
+      const newLog = { ...log };
+      if (newLog.createdAt && typeof newLog.createdAt === "number") {
+        try {
+          newLog.createdAt = new Date(newLog.createdAt);
+          if (isNaN(newLog.createdAt.getTime()))
+            throw new Error("Invalid Date");
+        } catch (e) {
+          newLog.createdAt = new Date();
+        }
+      } else {
+        newLog.createdAt = new Date();
+      }
+      const ref = logsRef.doc();
+      batch.set(ref, newLog);
+      count++;
+      if (count >= batchSize) {
+        await batch.commit();
+        batch = db.batch();
+        count = 0;
+      }
+    }
+    if (count > 0) {
+      await batch.commit();
+    }
+    console.log("All data imported to cloud");
+    updateSaveStatus("saved");
+    loadData();
+    showPopup("クラウドへのデータの取り込みが完了しました。");
+  } catch (err) {
+    console.error("Cloud import failed", err);
+    showPopup("一部のデータの取り込みに失敗しました。");
+    updateSaveStatus("error");
+  }
+}
+
+async function syncDataOnLogin() {
+  updateSaveStatus("saving");
+  const localData = getAllData();
+  if (Object.keys(localData).length === 0) {
+    loadData();
+    return;
+  }
+  try {
+    const cloudData = await fetchAllCloudData();
+    const { toUpload, toDownload } = compareAndMerge(localData, cloudData);
+    if (Object.keys(toUpload).length > 0) {
+      await uploadToCloud(toUpload);
+    }
+    localStorage.removeItem("studyReportAllData");
+    if (
+      Object.keys(toUpload).length > 0 ||
+      Object.keys(toDownload).length > 0
+    ) {
+      addSyncLog(
+        "sync",
+        "",
+        `同期完了: ${Object.keys(toUpload).length}件アップロード, ${Object.keys(toDownload).length}件はクラウドを優先`,
+      );
+    }
+    loadData();
+  } catch (err) {
+    console.error("Sync failed", err);
+    updateSaveStatus("error");
+    showPopup("同期に失敗しました。クラウドからデータを読み込みます。");
+    localStorage.removeItem("studyReportAllData");
+    loadData();
+  }
+}
+async function fetchAllCloudData() {
+  if (!currentUser) return {};
+  const snapshot = await db
+    .collection("users")
+    .doc(currentUser.uid)
+    .collection("reports")
+    .get();
+  const cloudData = {};
+  snapshot.forEach((doc) => {
+    cloudData[doc.id] = doc.data();
+  });
+  return cloudData;
+}
+
+function compareAndMerge(localData, cloudData) {
+  const toUpload = {};
+  const toDownload = {};
+  const allDates = new Set([
+    ...Object.keys(localData),
+    ...Object.keys(cloudData),
+  ]);
+  allDates.forEach((dateKey) => {
+    const local = localData[dateKey];
+    const cloud = cloudData[dateKey];
+    if (local && !cloud) {
+      toUpload[dateKey] = local;
+      addSyncLog("upload", dateKey, "ローカルからクラウドへアップロード");
+    } else if (!local && cloud) {
+      toDownload[dateKey] = cloud;
+    } else if (local && cloud) {
+      const localTime = local.updatedAt || 0;
+      let cloudTime = 0;
+      if (cloud.updatedAt) {
+        if (cloud.updatedAt.toMillis) {
+          cloudTime = cloud.updatedAt.toMillis();
+        } else if (typeof cloud.updatedAt === "number") {
+          cloudTime = cloud.updatedAt;
+        }
+      }
+      if (localTime > cloudTime) {
+        toUpload[dateKey] = local;
+        addSyncLog("upload", dateKey, "ローカルが新しいためアップロード");
+      } else {
+        toDownload[dateKey] = cloud;
+      }
+    }
+  });
+  return {
+    toUpload,
+    toDownload,
+  };
+}
+async function uploadToCloud(dataToUpload) {
+  if (!currentUser) return;
+  const reportsRef = db
+    .collection("users")
+    .doc(currentUser.uid)
+    .collection("reports");
+  const promises = [];
+  Object.keys(dataToUpload).forEach((dateKey) => {
+    const data = dataToUpload[dateKey];
+    promises.push(
+      reportsRef.doc(dateKey).set({
+        subjects: data.subjects,
+        comment: data.comment,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      }),
+    );
+  });
+  await Promise.all(promises);
+}
+
+function getSyncLogs() {
+  const logsJson = localStorage.getItem("studyReportSyncLogs");
+  if (!logsJson) return [];
+  try {
+    return JSON.parse(logsJson);
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveSyncLogs(logs) {
+  localStorage.setItem("studyReportSyncLogs", JSON.stringify(logs));
+}
+
+function addSyncLog(action, dateKey, detail) {
+  const now = new Date();
+  // 修正: テンプレートリテラルの閉じ忘れを修正しました
+  const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const logData = {
+    timestamp: timestamp,
+    action: action,
+    date: dateKey || "",
+    detail: detail || "",
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+  };
+  if (currentUser) {
+    db.collection("users")
+      .doc(currentUser.uid)
+      .collection("logs")
+      .add(logData)
+      .then(() => console.log("Log added to cloud"))
+      .catch((err) => console.error("Failed to add cloud log", err));
+  } else {
+    const logs = getSyncLogs();
+    delete logData.createdAt;
+    logs.unshift(logData);
+    saveSyncLogs(logs);
+  }
+}
+
+async function showSyncLog() {
+  const modal = document.getElementById("sync-log-modal");
+  const logList = document.getElementById("sync-log-list");
+  logList.innerHTML = '<div class="sync-log-empty">読み込み中...</div>';
+  modal.classList.add("show");
+  let logs = [];
+  if (currentUser) {
+    try {
+      const snapshot = await db
+        .collection("users")
+        .doc(currentUser.uid)
+        .collection("logs")
+        .orderBy("createdAt", "desc")
+        .limit(50)
+        .get();
+      logs = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          timestamp: data.timestamp,
+          action: data.action,
+          date: data.date,
+          detail: data.detail,
+        };
+      });
+    } catch (err) {
+      console.error("Failed to fetch logs", err);
+      logList.innerHTML =
+        '<div class="sync-log-empty">ログの取得に失敗しました</div>';
+      return;
+    }
+  } else {
+    logs = getSyncLogs();
+  }
+  if (logs.length === 0) {
+    logList.innerHTML =
+      '<div class="sync-log-empty">操作ログはありません</div>';
+  } else {
+    logList.innerHTML = logs
+      .map((log) => {
+        const actionLabel =
+          log.action === "upload"
+            ? "アップロード"
+            : log.action === "download"
+              ? "ダウンロード"
+              : log.action === "edit"
+                ? "編集"
+                : log.action === "sync"
+                  ? "同期"
+                  : log.action;
+        return `
+                <div class="sync-log-item">
+                    <span class="log-time">${log.timestamp}</span>
+                    <span class="log-action ${log.action}">[${actionLabel}]</span>
+                    ${log.date ? `<span class="log-date">${log.date}</span>` : ""}
+                    <div class="log-detail">${log.detail}</div>
+                </div>
+            `;
+      })
+      .join("");
+  }
+}
+
+function closeSyncLogModal() {
+  const modal = document.getElementById("sync-log-modal");
+  modal.classList.remove("show");
+}
+async function clearSyncLog() {
+  const confirmed = await showConfirm("すべての操作ログを削除しますか？");
+  if (confirmed) {
+    if (currentUser) {
+      try {
+        const collectionRef = db
+          .collection("users")
+          .doc(currentUser.uid)
+          .collection("logs");
+        const snapshot = await collectionRef.get();
+        const batch = db.batch();
+        snapshot.docs.forEach((doc) => {
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+        showPopup("操作ログを削除しました");
+        showSyncLog();
+      } catch (err) {
+        console.error("Failed to delete logs", err);
+        showPopup("ログの削除に失敗しました");
+      }
+    } else {
+      localStorage.removeItem("studyReportSyncLogs");
+      showSyncLog();
+      showPopup("操作ログを削除しました");
+    }
+  }
+}
+
+// --- エンターキーでのログイン実行 ---
+function setupEnterKey(inputId, buttonId) {
+  const input = document.getElementById(inputId);
+  const button = document.getElementById(buttonId);
+  if (!input || !button) return;
+
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      button.click();
+    }
+  });
+}
+
+// 画面ロード時に設定
+document.addEventListener("DOMContentLoaded", () => {
+  // Auth Guard Screen (メール/パスワード)
+  setupEnterKey("auth-email", "auth-action-btn");
+  setupEnterKey("auth-password", "auth-action-btn");
+
+  // Login Modal (メール/パスワード)
+  setupEnterKey("login-email", "email-signin-btn");
+  setupEnterKey("login-password", "email-signin-btn");
+});
