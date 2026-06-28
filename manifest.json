@@ -1,19 +1,19 @@
 {
-  "name": "Study Report",
+  "name": "StudyReport",
   "short_name": "StudyReport",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#4CAF50",
+  "theme_color": "#4f46e5",
   "icons": [
     {
-      "src": "assets/logo.png",
+      "src": "assets/apple-touch-icon-180x180.png",
       "sizes": "180x180",
       "type": "image/png"
     },
     {
       "src": "assets/logo.png",
-      "sizes": "192x192",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     }

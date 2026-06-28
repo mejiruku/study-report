@@ -1,13 +1,13 @@
-const CACHE_NAME = 'StudyReport-v3'; // バージョン管理
+const CACHE_NAME = 'StudyReport-v1'; // バージョン管理
 const urlsToCache = [
     './',              // index.html
     './index.html',
     './manifest.json',
-    './css/style.css',     // CSSファイル
-    './js/script.js',     // JSファイル
-    './js/firebase-init.js',
-    './assets/logo.png', // 画像
-    'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg'
+    './assets/index.css',     // CSSファイル
+    './assets/index.js',      // JSファイル
+    './assets/logo.png',      // 画像
+    './assets/apple-touch-icon-180x180.png',
+    './assets/favicon.png'
 ];
 
 // インストール時にキャッシュする
@@ -46,10 +46,16 @@ self.addEventListener('activate', function(event) {
 
 // Stale-While-Revalidate戦略でフェッチ
 self.addEventListener('fetch', function(event) {
+    // GETメソッド以外はキャッシュしない
+    if (event.request.method !== 'GET') {
+        return;
+    }
+
     // Firebase等の外部APIリクエストはキャッシュしない
     if (event.request.url.includes('firebaseio.com') ||
         event.request.url.includes('googleapis.com') ||
-        event.request.url.includes('gstatic.com')) {
+        event.request.url.includes('gstatic.com') ||
+        event.request.url.includes('firebase')) {
         return;
     }
 
@@ -65,7 +71,7 @@ self.addEventListener('fetch', function(event) {
                     return networkResponse;
                 }).catch(function(error) {
                     console.log('ネットワークエラー:', error);
-                    // ネットワークエラー時はキャッシュを返す（下で処理）
+                    // ネットワークエラー時はキャッシュを返す
                     return cachedResponse;
                 });
 
