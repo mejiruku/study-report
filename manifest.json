@@ -1,5 +1,4 @@
 {
-  
   "name": "StudyReport",
   "short_name": "StudyReport",
   "start_url": "./index.html",
@@ -19,5 +18,4 @@
       "purpose": "any"
     }
   ]
-  
 }
