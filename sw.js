@@ -1,18 +1,1 @@
-self.addEventListener('install', function(e) {
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', function(e) {
-  e.waitUntil(
-    caches.keys().then(function(cacheNames) {
-      return Promise.all(
-        cacheNames.map(function(cacheName) {
-          return caches.delete(cacheName);
-        })
-      );
-    }).then(function() {
-      return self.registration.unregister();
-    })
-  );
-});
-
+if(!self.define){let e,s={};const i=(i,n)=>(i=new URL(i+".js",n).href,s[i]||new Promise(s=>{if("document"in self){const e=document.createElement("script");e.src=i,e.onload=s,document.head.appendChild(e)}else e=i,importScripts(i),s()}).then(()=>{let e=s[i];if(!e)throw new Error(`Module ${i} didn’t register its module`);return e}));self.define=(n,o)=>{const t=e||("document"in self?document.currentScript.src:"")||location.href;if(s[t])return;let l={};const r=e=>i(e,t),a={module:{uri:t},exports:l,require:r};s[t]=Promise.all(n.map(e=>a[e]||r(e))).then(e=>(o(...e),l))}}define(["./workbox-bdb082da"],function(e){"use strict";self.skipWaiting(),e.clientsClaim(),e.precacheAndRoute([{url:"index.html",revision:"d8d58272a8ec2388a54b31d12cd451e4"},{url:"assets/workbox-window.prod.es5.js",revision:null},{url:"assets/TimelineTab.js",revision:null},{url:"assets/SettingsView.js",revision:null},{url:"assets/ReportTab.js",revision:null},{url:"assets/logo.png",revision:null},{url:"assets/index.js",revision:null},{url:"assets/index.css",revision:null},{url:"assets/favicon.png",revision:null},{url:"assets/favicon.ico",revision:null},{url:"assets/apple-touch-icon-180x180.png",revision:null},{url:"assets/AnalyticsTab.js",revision:null},{url:"manifest.webmanifest",revision:"729d1e0a1bca133b081ac5e3d25eb9bf"}],{}),e.cleanupOutdatedCaches(),e.registerRoute(new e.NavigationRoute(e.createHandlerBoundToURL("index.html"))),e.registerRoute(/^https:\/\/firestore\.googleapis\.com\/.*/i,new e.NetworkFirst({cacheName:"firebase-firestore-cache",networkTimeoutSeconds:5,plugins:[new e.ExpirationPlugin({maxEntries:50,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/^https:\/\/identitytoolkit\.googleapis\.com\/.*/i,new e.NetworkFirst({cacheName:"firebase-auth-cache",networkTimeoutSeconds:5,plugins:[new e.ExpirationPlugin({maxEntries:10,maxAgeSeconds:3600})]}),"GET"),e.registerRoute(/^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,new e.CacheFirst({cacheName:"google-fonts-cache",plugins:[new e.ExpirationPlugin({maxEntries:10,maxAgeSeconds:31536e3})]}),"GET")});
