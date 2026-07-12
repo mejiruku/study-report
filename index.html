@@ -7,25 +7,47 @@
     <link rel="icon" type="image/png" href="./assets/favicon.png" />
     <link rel="apple-touch-icon" href="./assets/apple-touch-icon-180x180.png" />
     <title>StudyReport</title>
-    <meta name="data-app-version" content="Beta 2.0.0-11">
+    <meta name="data-app-version" content="Beta 2.0.0-12">
     <script type="module" crossorigin src="./assets/index.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index.css">
   <link rel="manifest" href="./manifest.webmanifest"></head>
   <body>
-    <div id="error-log" style="color: red; position: fixed; top: 0; left: 0; z-index: 9999; background: white; padding: 10px; display: none;"></div>
+    <div id="error-log" style="color: red; position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: white; padding: 10px; display: none; max-height: 50vh; overflow-y: auto; border-bottom: 2px solid red;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <h3 style="margin: 0;">システムエラーが発生しました</h3>
+        <button onclick="clearCacheAndReload()" style="padding: 8px 16px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer;">キャッシュを修復してリロード</button>
+      </div>
+      <div id="error-text" style="font-family: monospace; font-size: 12px; white-space: pre-wrap;"></div>
+    </div>
     <script>
+      function clearCacheAndReload() {
+        var req = indexedDB.deleteDatabase('firestore/[DEFAULT]/synps-app/main');
+        req.onsuccess = function () {
+          console.log("Deleted database successfully");
+          window.location.reload();
+        };
+        req.onerror = function () {
+          console.log("Couldn't delete database");
+          window.location.reload();
+        };
+        req.onblocked = function () {
+          console.log("Couldn't delete database due to the operation being blocked");
+          window.location.reload();
+        };
+      }
       window.addEventListener('error', function(event) {
         var el = document.getElementById('error-log');
+        var textEl = document.getElementById('error-text');
         el.style.display = 'block';
-        el.innerText += event.message + '\n';
+        textEl.innerText += event.message + '\n';
       });
       window.addEventListener('unhandledrejection', function(event) {
         var el = document.getElementById('error-log');
+        var textEl = document.getElementById('error-text');
         el.style.display = 'block';
-        el.innerText += event.reason + '\n';
+        textEl.innerText += (event.reason ? event.reason.toString() : 'Unhandled Rejection') + '\n';
       });
     </script>
     <div id="root"></div>
   </body>
-</html>
 
