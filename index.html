@@ -2,70 +2,77 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <!-- user-scalable=no でブラウザのピンチズームを無効化 (表のみカスタム制御) -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>シフトントン</title>
-    <meta name="description" content="役割や時間を設定してシフト表を作成し、PDF・画像として出力できるiPad向けWebアプリです。" />
-    <meta property="og:title" content="シフトントン" />
-    <meta property="og:description" content="役割や時間を設定してシフト表を作成し、PDF・画像として出力できるiPad向けWebアプリです。" />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <!-- PWA / iOS ホーム画面対応 -->
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="シフトントン" />
-    <meta name="theme-color" content="#3b82f6" />
-    <link rel="icon" type="image/jpeg" href="./logo.jpg" />
-    <link rel="apple-touch-icon" href="./logo.jpg" />
-    <style>
-      #splash-screen {
-        position: fixed;
-        inset: 0;
-        background-color: #ffffff;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
-        transition: opacity 0.5s ease-out;
-      }
-      #splash-screen img {
-        width: 120px;
-        height: 120px;
-        object-fit: contain;
-        margin-bottom: 24px;
-        border-radius: 20px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-      }
-      .progress-bar-container {
-        width: 200px;
-        height: 6px;
-        background-color: #e5e7eb;
-        border-radius: 4px;
-        overflow: hidden;
-        position: relative;
-      }
-      .progress-bar {
-        width: 100%;
-        height: 100%;
-        background-color: #3b82f6;
-        animation: load 2s ease-in-out forwards;
-      }
-      @keyframes load {
-        0% { transform: translateX(-100%); }
-        100% { transform: translateX(0); }
-      }
-    </style>
+    <link rel="icon" type="image/x-icon" href="./assets/favicon.ico" />
+    <link rel="icon" type="image/png" href="./assets/favicon.png" />
+    <link rel="apple-touch-icon" href="./assets/apple-touch-icon-180x180.png" />
+    <title>StudyReport</title>
     <script type="module" crossorigin src="./assets/index.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index.css">
-  <link rel="manifest" href="./manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="./registerSW.js"></script></head>
+  <link rel="manifest" href="./manifest.webmanifest"></head>
   <body>
-    <div id="splash-screen">
-      <img src="./logo.jpg" alt="シフトントン" />
-      <div class="progress-bar-container">
-        <div class="progress-bar"></div>
+    <div id="error-log" style="color: red; position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: white; padding: 10px; display: none; max-height: 50vh; overflow-y: auto; border-bottom: 2px solid red;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <h3 style="margin: 0;">システムエラーが発生しました</h3>
+        <button onclick="clearCacheAndReload()" style="padding: 8px 16px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer;">キャッシュを修復してリロード</button>
+      </div>
+      <div id="error-text" style="font-family: monospace; font-size: 12px; white-space: pre-wrap;"></div>
+    </div>
+    <script>
+      function clearCacheAndReload() {
+        var req = indexedDB.deleteDatabase('firestore/[DEFAULT]/synps-app/main');
+        req.onsuccess = function () {
+          console.log("Deleted database successfully");
+          window.location.reload();
+        };
+        req.onerror = function () {
+          console.log("Couldn't delete database");
+          window.location.reload();
+        };
+        req.onblocked = function () {
+          console.log("Couldn't delete database due to the operation being blocked");
+          window.location.reload();
+        };
+      }
+      window.addEventListener('error', function(event) {
+        var el = document.getElementById('error-log');
+        var textEl = document.getElementById('error-text');
+        el.style.display = 'block';
+        textEl.innerText += event.message + '\n';
+      });
+      window.addEventListener('unhandledrejection', function(event) {
+        var el = document.getElementById('error-log');
+        var textEl = document.getElementById('error-text');
+        el.style.display = 'block';
+        textEl.innerText += (event.reason ? event.reason.toString() : 'Unhandled Rejection') + '\n';
+      });
+    </script>
+    <div id="root">
+      <style>
+        .initial-loader {
+          padding: 16px;
+          max-width: 680px;
+          margin: 0 auto;
+          box-sizing: border-box;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .skeleton-pulse {
+          animation: pulse 1.5s ease-in-out infinite;
+          background: #e2e8f0;
+          border-radius: 16px;
+          margin-bottom: 16px;
+        }
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.5; }
+          100% { opacity: 1; }
+        }
+      </style>
+      <div class="initial-loader">
+        <div style="height: 60px; border-radius: 12px; margin-bottom: 24px;" class="skeleton-pulse"></div>
+        <div style="height: 120px;" class="skeleton-pulse"></div>
+        <div style="height: 200px;" class="skeleton-pulse"></div>
       </div>
     </div>
-    <div id="root"></div>
   </body>
-</html>
+
